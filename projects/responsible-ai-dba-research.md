@@ -41,3 +41,8 @@ Alignment research asks whether advanced systems pursue intended goals safely. G
 ## Intended contribution
 
 A practical framework and case-study set for continuous AI assurance, emphasizing falsifiable claims, coverage, counterexamples, change-triggered revalidation, and transparent residual risk.
+
+
+## CloudGuard AI case study
+
+[CloudGuard AI](cloudguard-ai.md) is the first runnable Responsible AI case study in this portfolio. It translates explainability, human oversight, accountability, auditability, and contestability into executable controls for a high-stakes cloud security scenario. The implementation deliberately distinguishes transparent attribution from proof of model correctness.
