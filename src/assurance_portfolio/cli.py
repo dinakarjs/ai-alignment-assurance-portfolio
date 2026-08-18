@@ -7,6 +7,8 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
+import sys
 from typing import Mapping
 
 from .agentic_verification import (
@@ -18,6 +20,7 @@ from .cloudguard import CloudGuardEngine, incident_from_dict
 from .controlled_evaluation import run_controlled_evaluation
 from .corpus_benchmark import CorpusCase, default_corpus
 from .corpus_evaluation import run_corpus_trial, summarize_trials
+from .experiment_artifacts import write_experiment_bundle
 from .rtl_behavioral import run_handshake_rtl_benchmark
 from .sva_validation import StructuralSVAValidator, VerilatorSVAValidator
 from .trace_assurance import TraceAssuranceEngine
@@ -67,7 +70,6 @@ def _cloudguard_payload(data: Mapping[str, object]) -> dict[str, object]:
     engine = CloudGuardEngine()
     recommendation = engine.assess(incident_from_dict(data))
     payload: dict[str, object] = {"recommendation": asdict(recommendation)}
-
     decision_data = data.get("decision")
     if isinstance(decision_data, Mapping):
         record = engine.decide(
@@ -158,7 +160,7 @@ def _run_scripted_corpus(trials: int, rtl_root: str) -> tuple[object, object]:
                 rtl_root=rtl_root,
                 evidence_kind="scripted_offline",
                 model_label="scripted-fixtures",
-                prompt_version="v8.0",
+                prompt_version="v9.0",
             )
         )
     trial_tuple = tuple(runs)
@@ -186,7 +188,7 @@ def _run_live_corpus(trials: int, rtl_root: str, model: str | None) -> tuple[obj
                 rtl_root=rtl_root,
                 evidence_kind="live_model",
                 model_label=model_label,
-                prompt_version="v8.0",
+                prompt_version="v9.0",
             )
         )
     trial_tuple = tuple(runs)
@@ -207,47 +209,39 @@ def main() -> None:
     agentic.add_argument("input", help="Path to a JSON requirements list")
     agentic.add_argument("--model", default=None, help="OpenAI model name; defaults to OPENAI_MODEL")
     agentic.add_argument(
-        "--validator",
-        choices=("structural", "verilator"),
-        default="structural",
-        help="Deterministic acceptance validator",
+        "--validator", choices=("structural", "verilator"), default="structural"
     )
 
     subparsers.add_parser("benchmark", help="Run the dependency-free seeded trace benchmark")
 
-    rtl_benchmark = subparsers.add_parser(
-        "rtl-benchmark",
-        help="Compile and simulate the seeded request/grant RTL mutation benchmark",
-    )
+    rtl_benchmark = subparsers.add_parser("rtl-benchmark")
     rtl_benchmark.add_argument("--rtl-root", default="benchmarks/rtl")
 
-    controlled = subparsers.add_parser(
-        "controlled-eval",
-        help="Run the labelled scripted/offline V7 four-condition comparison",
-    )
+    controlled = subparsers.add_parser("controlled-eval")
     controlled.add_argument("--rtl-root", default="benchmarks/rtl")
 
-    live = subparsers.add_parser(
-        "controlled-eval-live",
-        help="Run the V7 four-condition comparison with live OpenAI model calls",
-    )
+    live = subparsers.add_parser("controlled-eval-live")
     live.add_argument("--rtl-root", default="benchmarks/rtl")
-    live.add_argument("--model", default=None, help="OpenAI model name; defaults to OPENAI_MODEL")
+    live.add_argument("--model", default=None)
 
-    corpus_eval = subparsers.add_parser(
-        "corpus-eval",
-        help="Run repeated scripted/offline V8 evaluation across three RTL requirement families",
-    )
+    corpus_eval = subparsers.add_parser("corpus-eval")
     corpus_eval.add_argument("--rtl-root", default="benchmarks/rtl")
     corpus_eval.add_argument("--trials", type=int, default=3)
-
-    corpus_live = subparsers.add_parser(
-        "corpus-eval-live",
-        help="Run repeated live-model V8 evaluation across the RTL corpus",
+    corpus_eval.add_argument(
+        "--output-root",
+        default=None,
+        help="Optional directory in which to write a V9 experiment bundle",
     )
+
+    corpus_live = subparsers.add_parser("corpus-eval-live")
     corpus_live.add_argument("--rtl-root", default="benchmarks/rtl")
     corpus_live.add_argument("--trials", type=int, default=1)
-    corpus_live.add_argument("--model", default=None, help="OpenAI model name; defaults to OPENAI_MODEL")
+    corpus_live.add_argument("--model", default=None)
+    corpus_live.add_argument(
+        "--output-root",
+        default="artifacts/experiments",
+        help="Directory for manifest, JSON/CSV results, and Markdown report",
+    )
 
     args = parser.parse_args()
 
@@ -277,7 +271,22 @@ def main() -> None:
             trials, summary = _run_scripted_corpus(args.trials, args.rtl_root)
         else:
             trials, summary = _run_live_corpus(args.trials, args.rtl_root, args.model)
-        print(json.dumps({"summary": asdict(summary), "trials": [asdict(item) for item in trials]}, indent=2))
+        artifact_dir = None
+        if args.output_root:
+            command = " ".join(shlex.quote(item) for item in sys.argv)
+            artifact_dir = write_experiment_bundle(
+                trials,  # type: ignore[arg-type]
+                summary,  # type: ignore[arg-type]
+                output_root=args.output_root,
+                command=command,
+                rtl_root=args.rtl_root,
+            )
+        payload = {
+            "summary": asdict(summary),
+            "trials": [asdict(item) for item in trials],
+            "artifact_directory": str(artifact_dir) if artifact_dir else None,
+        }
+        print(json.dumps(payload, indent=2))
         return
 
     if args.command in {"controlled-eval", "controlled-eval-live"}:
