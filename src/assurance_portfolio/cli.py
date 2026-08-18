@@ -6,6 +6,7 @@ from dataclasses import asdict
 import argparse
 import json
 from pathlib import Path
+from typing import Mapping
 
 from .cloudguard import CloudGuardEngine, incident_from_dict
 from .trace_assurance import TraceAssuranceEngine
@@ -14,6 +15,28 @@ from .verification_copilot import Requirement, VerificationCopilot
 
 def _load(path: str) -> object:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _cloudguard_payload(data: Mapping[str, object]) -> dict[str, object]:
+    engine = CloudGuardEngine()
+    recommendation = engine.assess(incident_from_dict(data))
+    payload: dict[str, object] = {"recommendation": asdict(recommendation)}
+
+    decision_data = data.get("decision")
+    if isinstance(decision_data, Mapping):
+        record = engine.decide(
+            recommendation,
+            analyst=str(decision_data.get("analyst", "")),
+            decision=str(decision_data.get("decision", "")),
+            rationale=str(decision_data.get("rationale", "")),
+        )
+        payload["audit_record"] = asdict(record)
+    else:
+        payload["audit_record"] = None
+        payload["next_step"] = (
+            "Provide a decision object with analyst, decision, and rationale to exercise human oversight."
+        )
+    return payload
 
 
 def main() -> None:
@@ -26,8 +49,7 @@ def main() -> None:
 
     data = _load(args.input)
     if args.command == "cloudguard":
-        result = CloudGuardEngine().assess(incident_from_dict(data))  # type: ignore[arg-type]
-        payload = asdict(result)
+        payload = _cloudguard_payload(data)  # type: ignore[arg-type]
     elif args.command == "trace":
         result = TraceAssuranceEngine().evaluate(data)  # type: ignore[arg-type]
         payload = asdict(result)
@@ -41,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

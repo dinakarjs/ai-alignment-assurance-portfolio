@@ -1,8 +1,13 @@
 import unittest
 
+from assurance_portfolio.cli import _cloudguard_payload
 from assurance_portfolio.cloudguard import CloudGuardEngine, Incident
 from assurance_portfolio.trace_assurance import AssuranceStatus, TraceAssuranceEngine
-from assurance_portfolio.verification_copilot import Requirement, VerificationCopilot
+from assurance_portfolio.verification_copilot import (
+    GenerationStatus,
+    Requirement,
+    VerificationCopilot,
+)
 
 
 class PrototypeTests(unittest.TestCase):
@@ -22,6 +27,9 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(result.risk_score, 95)
         self.assertEqual(result.recommended_action, "disable_account")
         self.assertTrue(result.human_approval_required)
+        self.assertEqual(result.confidence, result.evidence_strength)
+        self.assertLessEqual(len(result.top_reasons), 3)
+        self.assertTrue(all(value > 0 for _, value in result.top_reasons))
 
     def test_cloudguard_rejects_out_of_range_signal(self) -> None:
         with self.assertRaises(ValueError):
@@ -46,12 +54,34 @@ class PrototypeTests(unittest.TestCase):
             engine.decide(result, analyst="", decision="approve", rationale="Confirmed")
         record = engine.decide(
             result,
-            analyst="analyst-7",
+            analyst=" analyst-7 ",
             decision="approve",
-            rationale="Correlated logs confirmed",
+            rationale=" Correlated logs confirmed ",
         )
         self.assertEqual(record.analyst, "analyst-7")
+        self.assertEqual(record.rationale, "Correlated logs confirmed")
         self.assertEqual(len(record.recommendation_hash), 64)
+
+    def test_cloudguard_cli_payload_includes_human_decision_audit(self) -> None:
+        payload = _cloudguard_payload(
+            {
+                "incident_id": "CG-4",
+                "account_id": "user-4",
+                "signals": {
+                    "impossible_travel": 1,
+                    "privilege_escalation": 1,
+                    "failed_logins": 1,
+                },
+                "decision": {
+                    "analyst": "analyst-4",
+                    "decision": "approve",
+                    "rationale": "Evidence confirmed",
+                },
+            }
+        )
+        self.assertIn("recommendation", payload)
+        self.assertIn("audit_record", payload)
+        self.assertEqual(payload["audit_record"]["analyst"], "analyst-4")  # type: ignore[index]
 
     def _complete_trace(self) -> list[dict[str, object]]:
         return [
@@ -178,13 +208,7 @@ class PrototypeTests(unittest.TestCase):
     def test_negative_expiry_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             TraceAssuranceEngine().evaluate(
-                [
-                    {
-                        "type": "authorize",
-                        "action": "delete",
-                        "expires_after_events": -1,
-                    }
-                ]
+                [{"type": "authorize", "action": "delete", "expires_after_events": -1}]
             )
 
     def test_shutdown_allows_audit_and_status_but_blocks_actions(self) -> None:
@@ -210,8 +234,10 @@ class PrototypeTests(unittest.TestCase):
         )
         self.assertIn("Requirement lacks a clear normative term", artifact.review_findings)
         self.assertIn("Requirement contains an ambiguous adjective", artifact.review_findings)
+        self.assertEqual(artifact.generation_status, GenerationStatus.FALLBACK)
+        self.assertTrue(artifact.artifact_review_findings)
 
-    def test_copilot_generates_temporal_draft_for_bounded_requirement(self) -> None:
+    def test_copilot_generates_bounded_response(self) -> None:
         artifact = VerificationCopilot().propose(
             Requirement("REQ-10", "grant shall assert within 4 cycles after request")
         )
@@ -219,14 +245,58 @@ class PrototypeTests(unittest.TestCase):
             artifact.assertion,
             "assert property (@(posedge clk) request |-> ##[1:4] grant);",
         )
-        self.assertIn("4-cycle boundary", artifact.scenarios[1])
+        self.assertEqual(artifact.generation_status, GenerationStatus.SUPPORTED)
+        self.assertEqual(artifact.matched_pattern, "bounded_response_after")
         self.assertFalse(artifact.review_findings)
 
-    def test_copilot_falls_back_to_explicit_expert_review_draft(self) -> None:
+    def test_copilot_supports_no_later_than_following(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement(
+                "REQ-12",
+                "the grant signal shall be asserted no later than 4 cycles following the request",
+            )
+        )
+        self.assertIn("##[1:4] grant", artifact.assertion)
+        self.assertEqual(artifact.matched_pattern, "no_later_than_following")
+
+    def test_copilot_supports_conditional_bounded_response(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-13", "if request, grant shall assert within 3 cycles")
+        )
+        self.assertIn("request |-> ##[1:3] grant", artifact.assertion)
+        self.assertEqual(artifact.matched_pattern, "conditional_bounded_response")
+
+    def test_copilot_supports_prohibition(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-14", "grant shall never assert while reset")
+        )
+        self.assertIn("reset |-> !grant", artifact.assertion)
+        self.assertEqual(artifact.matched_pattern, "prohibition_while_condition")
+
+    def test_copilot_supports_immediate_implication(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-15", "if request is high, busy shall be high")
+        )
+        self.assertIn("request |-> busy", artifact.assertion)
+        self.assertEqual(artifact.matched_pattern, "immediate_implication")
+
+    def test_copilot_supports_persistence(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-16", "busy shall remain asserted until done")
+        )
+        self.assertIn("busy until_with done", artifact.assertion)
+        self.assertEqual(artifact.matched_pattern, "persistence_until_release")
+
+    def test_copilot_fallback_is_explicitly_reviewed(self) -> None:
         artifact = VerificationCopilot().propose(
             Requirement("REQ-11", "The service shall preserve authorization state.")
         )
-        self.assertIn("expert review required", artifact.assertion)
+        self.assertEqual(artifact.generation_status, GenerationStatus.FALLBACK)
+        self.assertIn("FALLBACK", artifact.assertion)
+        self.assertIn(
+            "Generator used FALLBACK; no supported temporal pattern matched",
+            artifact.artifact_review_findings,
+        )
 
 
 if __name__ == "__main__":
