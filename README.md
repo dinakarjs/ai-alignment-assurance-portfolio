@@ -1,8 +1,8 @@
 # AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
 
-This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. The implementation now separates deterministic baselines, model-backed roles, tool acceptance, behavioral RTL evidence, and controlled workflow comparison.
+This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. The implementation deliberately separates deterministic baselines, model-backed proposal/review, tool acceptance, behavioral RTL evidence, and controlled comparative evaluation.
 
-1. **Verification Copilot V7** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic assertion validation, behavioral RTL mutation detection, and a four-condition comparison harness.
+1. **Verification Copilot V8** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic validation, multi-family RTL mutation benchmarks, and repeated-trial workflow comparison.
 2. **Agent Trace Assurance Engine V4** - scoped/consumable/expiring authorization and evidence, high-risk classification checks, independent approval, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
 3. **CloudGuard AI V3** - transparent threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
 
@@ -25,9 +25,8 @@ With Icarus Verilog installed:
 ```bash
 assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
 assurance-demo controlled-eval --rtl-root benchmarks/rtl
+assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 3
 ```
-
-The RTL benchmark succeeds only when the intended handshake RTL passes the four-cycle request/grant requirement and the deliberately late-grant mutation fails it.
 
 ## Model-backed path
 
@@ -46,11 +45,9 @@ If Verilator is installed:
 assurance-demo agentic examples/requirements.json --validator verilator
 ```
 
-The workflow performs separate generator and reviewer model calls. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft reaches `accepted_for_human_review=true` only when the reviewer sends it forward and the configured deterministic validator returns `VALID`. This is a human-review gate, not design sign-off.
+The workflow performs separate generator and reviewer model calls. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft reaches `accepted_for_human_review=true` only when the reviewer sends it forward and the configured deterministic validator returns `VALID`. This remains a human-review gate, not design sign-off.
 
-Implementation: [`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py)
-
-## Verification Copilot V7
+## Verification Copilot V8
 
 ### Deterministic baseline
 
@@ -64,71 +61,75 @@ A requirement is marked **SUPPORTED** only when its complete normalized text mat
 
 ### Deterministic validation
 
-[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides:
+[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides a shallow structural validator and a concrete Verilator-backed assertion/lint adapter. Tool acceptance is recorded separately from semantic correctness against RTL.
 
-- `StructuralSVAValidator` for shallow dependency-free checks, and
-- `VerilatorSVAValidator` for a concrete installed Verilator assertion/lint probe.
+## Behavioral evidence layers
 
-A Verilator `VALID` result means the assertion was accepted by that concrete tool/version. It does not establish semantic correctness against RTL.
+### V6 request/grant mutation proof
 
-### Behavioral RTL proof
+[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) executes the request/grant bounded-response requirement against:
 
-[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) compiles and simulates two request/grant designs with Icarus Verilog:
+- `handshake_good.sv`, expected to pass, and
+- `handshake_late_bug.sv`, expected to fail.
 
-- [`handshake_good.sv`](benchmarks/rtl/handshake_good.sv) - expected to satisfy `grant shall assert within 4 cycles after request`,
-- [`handshake_late_bug.sv`](benchmarks/rtl/handshake_late_bug.sv) - deliberately delays grant beyond the bound and is expected to fail.
+Compile/tool failures do not count as mutation detection.
 
-The runner records PASS/FAIL state, expected outcome, simulator/tool version, mutation-detection rate, false-positive count, and whether all expected outcomes were met. Compile errors and unavailable tools do not count as successful mutation detection.
+### V7 four-condition comparison
 
-## V7 controlled evaluation
+[`controlled_evaluation.py`](src/assurance_portfolio/controlled_evaluation.py) compares deterministic, single-model, generator+reviewer, and generator+reviewer+tool-gated workflows on the same request/grant mutation pair. It distinguishes mutation detection from false-positive behavior and records reviewer escalation separately from execution.
 
-[`controlled_evaluation.py`](src/assurance_portfolio/controlled_evaluation.py) applies the same bounded-response RTL fixtures to four workflow conditions:
+## V8 multi-family benchmark corpus
 
-1. `deterministic`
-2. `single_model`
-3. `generator_reviewer`
-4. `generator_reviewer_tool`
+V8 broadens the behavioral corpus to three temporal requirement families, each with known-good and mutated RTL:
 
-For each condition it records:
+| Case | Family | Requirement |
+|---|---|---|
+| BR-001 | bounded response | `grant shall assert within 4 cycles after request` |
+| PR-001 | prohibition | `grant shall never assert while reset` |
+| IM-001 | immediate implication | `if request is high, busy shall be high` |
 
-- generation success,
-- reviewer disposition where applicable,
-- assertion structural validity,
-- whether behavioral evaluation ran,
-- whether known-good RTL passed,
-- whether the mutation was detected,
-- false-positive count,
-- elapsed wall-clock time, and
-- token/cost fields only when telemetry is actually available.
+The new RTL fixtures are:
 
-The behavioral evaluator currently recognizes the bounded candidate form:
+- `handshake_good.sv` / `handshake_late_bug.sv`
+- `prohibition_good.sv` / `prohibition_bug.sv`
+- `implication_good.sv` / `implication_bug.sv`
 
-```systemverilog
-assert property (@(posedge clk) request |-> ##[1:N] grant);
-```
+[`corpus_benchmark.py`](src/assurance_portfolio/corpus_benchmark.py) parses the supported candidate assertion families and executes each candidate against the matching good/mutated RTL pair with Icarus Verilog.
 
-and executes the candidate's bound `N` against the same labelled RTL pair.
+[`corpus_evaluation.py`](src/assurance_portfolio/corpus_evaluation.py) applies the same four workflow conditions across the full corpus and aggregates repeated trials.
 
-Run the deterministic scripted comparison:
+Per-condition metrics include:
+
+- generation-failure rate,
+- reviewer escalation rate,
+- behavioral-execution rate,
+- **full-correct rate**: good RTL passes and mutation is detected,
+- mutation-detection rate among executed cases,
+- false-positive rate on known-good RTL,
+- mean elapsed wall-clock time.
+
+A candidate that detects a mutation but falsely rejects known-good RTL is **not** counted as fully correct.
+
+### Scripted/offline repeated trials
 
 ```bash
-assurance-demo controlled-eval --rtl-root benchmarks/rtl
+assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 3
 ```
 
-This mode validates **measurement plumbing**, not model quality. The scripted cases deliberately include a too-strict assertion that detects the seeded mutation but falsely fails the good RTL, demonstrating why mutation detection alone is not sufficient evidence.
+This mode validates the multi-family evaluation and aggregation machinery. It deliberately includes a too-strict bounded-response candidate and a reviewer escalation so that false-positive and abstention metrics are exercised. It is **not empirical model-quality evidence**.
 
-For live observations:
+### Live-model repeated trials
 
 ```bash
 python -m pip install -e ".[agentic]"
 export OPENAI_API_KEY="..."
 export OPENAI_MODEL="..."
-assurance-demo controlled-eval-live --rtl-root benchmarks/rtl
+assurance-demo corpus-eval-live --rtl-root benchmarks/rtl --trials 3
 ```
 
-A single live run is an observation, not a statistically meaningful comparison. Repeated trials, fixed model/prompt configuration, a larger mutation corpus, and expert review are required before making workflow-superiority claims.
+Live runs use fresh model calls for every case and trial and record `evidence_kind=live_model`, the configured model label, and prompt version `v8.0`. A small number of runs on this toy corpus is still not sufficient to claim workflow superiority.
 
-See [`benchmarks/CONTROLLED_EVALUATION.md`](benchmarks/CONTROLLED_EVALUATION.md).
+See [`benchmarks/V8_CORPUS.md`](benchmarks/V8_CORPUS.md).
 
 ## CI
 
@@ -142,8 +143,9 @@ GitHub Actions runs:
 - Python 3.11 unit tests and CLI smoke tests,
 - Python 3.12 unit tests and CLI smoke tests,
 - a real Verilator assertion-validation job,
-- a real Icarus Verilog behavioral RTL mutation job, and
-- the V7 scripted four-condition comparison using the real RTL behavioral runner.
+- the V6 Icarus request/grant mutation proof,
+- the V7 scripted four-condition comparison, and
+- a repeated V8 multi-family corpus evaluation using the real Icarus RTL runner.
 
 CI does not use model API credentials.
 
@@ -181,20 +183,8 @@ Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
 These are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
-## What V7 proves - and what it does not
+## What V8 proves - and what it does not
 
-V7 demonstrates in runnable code:
+V8 demonstrates in runnable code that the same four-condition evaluation protocol can operate across several temporal requirement families, execute multiple labelled RTL mutations, distinguish false positives from defect detection, preserve reviewer escalation as a separate outcome, and aggregate repeated trials with explicit evidence/model/prompt metadata.
 
-- deterministic requirement-to-artifact generation and review,
-- separate model-backed generator/reviewer roles,
-- strict model-output contracts and abstention/revision states,
-- deterministic acceptance gating,
-- real Verilator tool acceptance in CI,
-- synthetic trace defect benchmarks,
-- real simulation of labelled RTL fixtures,
-- behavioral detection of one seeded late-grant mutation without falsely failing the intended implementation, and
-- a common four-condition measurement harness that can distinguish mutation detection from false-positive behavior and reviewer/tool gating.
-
-V7 does **not** prove that model-backed generation is superior to the deterministic baseline. The scripted comparison is not empirical model evidence, the RTL corpus is still tiny, token/cost fields remain unavailable unless telemetry is captured, and human review effort is not yet measured.
-
-The next research step is to expand the mutation/requirement corpus and run repeated live-model trials with recorded configuration, usage, latency, behavioral outcomes, and blinded expert review.
+V8 still does **not** prove that model-backed generation is superior to the deterministic baseline, general natural-language-to-SVA correctness, production EDA equivalence, or SoC-scale transfer. The scripted repeated trials are evaluation-plumbing evidence only. Defensible model-performance claims require a larger independently designed corpus, more mutations per family, repeated live-model trials, usage telemetry, fixed model/prompt configuration, and blinded expert review.

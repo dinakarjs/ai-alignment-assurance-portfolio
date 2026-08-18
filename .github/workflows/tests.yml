@@ -70,3 +70,5 @@ jobs:
         run: assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
       - name: Exercise V7 four-condition comparison
         run: assurance-demo controlled-eval --rtl-root benchmarks/rtl
+      - name: Exercise V8 multi-family repeated corpus
+        run: assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 2
