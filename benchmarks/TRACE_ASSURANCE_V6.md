@@ -1,207 +1,206 @@
-# Agent Trace Assurance V6 — Runtime Assurance and Result Integrity
+# Agent Trace Assurance V6 — Runtime, Evaluation, CI/CD, and Result Integrity
 
-V6 turns the earlier post-hoc trace monitor into a broader reference architecture for **pre-action control, trace validation, auditable evaluation, and closed-loop check improvement**. The AI agent is treated as an untrusted planner; deterministic controls around it decide whether an effectful action may proceed.
+V6 treats the AI model as an **untrusted planner** and surrounds it with deterministic controls for pre-action authorization, trustworthy evaluation, least-privilege execution, trace validation, result attestation, and closed-loop check improvement.
 
 ## Threat model
 
-V6 is designed to make the following failure modes observable or harder to convert into effectful actions:
-
 | Weakness / attack | V6 control |
 |---|---|
-| hallucinated or unsupported high-risk claim | verified, transaction-bound evidence requirement |
-| prompt/tool injection creating authority | trust labels; untrusted content cannot create a capability |
-| excessive privilege / parameter substitution | parameter-bound capabilities and min/max/list constraints |
-| authorization replay | transaction-bound capability matching |
-| self-approval / weak independence | identity separation; high-risk trust-domain independence |
-| multi-agent privilege amplification | causal/delegation validator with child-scope subset rules |
-| malformed or incompatible trace | Draft 2020-12 JSON Schema instance validation |
-| stale/downgraded checker | minimum-version anti-rollback control |
-| omitted checks | explicit required/executed check manifest |
-| checker/result modification | checker/source, schema, policy, config, environment and result digests |
-| result tampering | optional Ed25519 result attestation |
-| machine FAIL rewritten as PASS | immutable machine result; human waiver/disposition is a separate record |
-| audit-history editing | hash chain plus local Merkle checkpoints |
-| full local-log replacement | not solved locally; external/WORM/transparency anchoring is recommended |
-| assurance implementation regression | deterministic replay plus seeded canary self-tests |
-| field issue escapes or is detected too late | field-issue replay, gap classification, and auditable check-update proposal |
-| weakened check/policy update | independent approval; security-sensitive weakening/removal requires an additional independent approver |
+| hallucinated/unsupported high-risk claim | verified transaction-bound evidence |
+| prompt/tool injection creating authority | untrusted content cannot create capability |
+| excessive privilege / parameter substitution | parameter-bound capabilities |
+| authorization replay | transaction/action scope |
+| self-approval | principal separation |
+| weak multi-agent independence | trust-domain escalation |
+| delegation privilege amplification | parent/child capability subset checks |
+| malformed/incompatible trace | JSON Schema validation |
+| ground-truth/answer leakage | evaluation provenance taint + ground-truth isolation |
+| scoring feedback before prediction freeze | commit-before-label-release + feedback isolation |
+| evaluator/model collusion | scorer independence and evaluator trust boundary |
+| hidden evaluation channel | evaluation canary noninterference |
+| apparent gain dependent on privileged information | controlled isolation/ablation attribution |
+| untrusted PR/comment reaches write-capable AI runner | CI/CD trigger/permission boundary |
+| agent edits its own workflow/policy | self-governance modification block |
+| secrets exposed to untrusted agent context | secret/capability isolation |
+| privilege escalation from agent to runner | requested-permission subset check |
+| artifact changed after review | reviewed-artifact digest match |
+| stale/downgraded checker | anti-rollback |
+| omitted checks | required/executed manifest |
+| checker/schema/policy/result modification | concrete artifact digests |
+| human rewrites FAIL to PASS | immutable machine result + separate disposition |
+| local audit editing | hash chain + Merkle checkpoint |
+| whole-log replacement | requires external anchor; not solved locally |
+| assurance regression | replay + canary self-tests |
+| field issue escapes | replay/gap classification/check-update proposal |
 
-## 1. Runtime gateway
+## 1. Runtime action integrity
 
-`runtime_assurance.py` evaluates a proposed action before tool execution. It currently emits:
-
-- `ALLOW`
-- `BLOCK`
-- `ESCALATE`
-
-`REWRITE` is reserved in the decision enum for a future constrained-rewrite policy; V6 does **not** currently rewrite tool arguments.
-
-A sensitive/high-risk action must match a parameter-bound capability. High-risk actions additionally require verified evidence bound to the same transaction/action and independent proposer/approver oversight. An action sourced from untrusted external/tool content does not gain authority merely because the model repeated that content.
-
-Example:
+`runtime_assurance.py` emits `ALLOW`, `BLOCK`, or `ESCALATE` before an effectful tool operation. Sensitive/high-risk actions must match parameter-bound capabilities. High-risk actions additionally require verified evidence and independent oversight. `REWRITE` is reserved but not implemented.
 
 ```bash
 assurance-runtime examples/runtime_assurance_request.json
 ```
 
-This is a reference gateway. The repository does not yet intercept a production tool broker or OS/network capability system.
+## 2. Evaluation Collusion & Leakage Protection
 
-## 2. Event schema and causal/delegation model
+`evaluation_integrity.py` treats ground truth, answer keys, evaluator-only data, scoring signals, post-commit feedback, and evaluation canaries as privileged evaluation-plane information.
 
-The V6 event schema is `schemas/agent-trace/2.0.0.json`. It is a JSON Schema Draft 2020-12 document and includes optional causal/provenance fields such as event/parent IDs, trace/span IDs, agent/principal identities, delegation, trust domains, action parameters, capability ancestry, and trust labels.
+Artifacts have producers, parent artifacts, labels, optional digests, and access records. Restricted labels propagate transitively through provenance ancestry. The prediction is invalid if privileged evaluation data becomes an ancestor of the prediction or is accessed by a system-under-test principal.
 
-`causal_trace.py` checks:
+Required checks include:
 
-- duplicate event IDs,
-- unknown parent-event references,
-- duplicate/missing delegated capability IDs,
-- unknown parent capabilities,
-- delegated action changes, and
-- child capability constraints broader than the parent capability.
+- `evaluation_ground_truth_isolation`
+- `prediction_before_label_release`
+- `prediction_commit_integrity`
+- `evaluation_feedback_isolation`
+- `transitive_provenance_taint`
+- `module_capability_separation`
+- `scorer_independence`
+- `evaluation_canary_noninterference`
 
-The validator is intentionally conservative and is **not** a complete model of distributed partial-order semantics.
+A prediction must be committed before ground truth is released. The scorer must be outside the system-under-test principal set and inside the evaluator trust boundary.
 
-## 3. Schema lifecycle
+```bash
+assurance-integrity evaluation examples/evaluation_integrity_clean.json
+```
 
-`schema_registry.py` supports immutable local schema proposals and controlled activation. Compatibility is classified as:
+### Attribution / isolation experiment
+
+The helper compares baseline score, full-pipeline score, and score after privileged channels are isolated:
+
+```bash
+assurance-integrity attribution --baseline 0.50 --full 0.85 --isolated 0.55
+```
+
+It reports the fraction of apparent gain dependent on the privileged channel. This is descriptive evidence and **not an automatic cheating/collusion verdict**.
+
+## 3. CI/CD & Privileged Execution Integrity
+
+`cicd_integrity.py` assumes an AI agent inside CI is less trusted than the runner/control plane. The core invariant is:
+
+`agent capability != runner capability != production promotion capability`
+
+Checks cover:
+
+- untrusted triggers reaching privileged runners,
+- workflow/policy control coming from an untrusted ref,
+- AI modification of its own workflow/policy,
+- secret exposure without explicit capability,
+- requested permissions exceeding runner permissions,
+- privileged execution from untrusted triggers,
+- independent approval for production effects,
+- production artifact digest matching the reviewed artifact.
+
+```bash
+assurance-integrity cicd examples/cicd_integrity_clean.json
+```
+
+A read-only sandbox can accept untrusted PR input. A write-capable or secret-bearing runner cannot be treated equivalently.
+
+## 4. Versioned schema and check lifecycle
+
+The V6 event schema is `schemas/agent-trace/2.0.0.json` and is validated using JSON Schema Draft 2020-12. `schema_registry.py` supports immutable proposal, compatibility classification, and independently approved activation.
+
+Compatibility states:
 
 - `BACKWARD_COMPATIBLE`
 - `MIGRATION_REQUIRED`
 - `BREAKING`
 - `SECURITY_SENSITIVE`
 
-Schema documents are themselves validated, and trace instances can be checked against an active schema. CLI operations:
+The original `checks/agent-trace-checks/6.0.0.json` remains immutable. The new evaluation- and CI/CD-integrity controls are introduced in `checks/agent-trace-checks/6.1.0.json`.
 
-```bash
-assurance-trace-audit --schema-root /tmp/schemas \
-  schema-propose candidate.json \
-  --kind agent-trace --version 2.1.0 --proposer engineer-a \
-  --previous-version 2.0.0
+## 5. Causal and delegation integrity
 
-assurance-trace-audit --schema-root /tmp/schemas \
-  schema-activate --kind agent-trace --version 2.1.0 --approver reviewer-b
-```
+`causal_trace.py` checks unique IDs, earlier parent references, capability ancestry, delegated action consistency, and simple constraint narrowing. It is not a complete distributed partial-order verifier.
 
-The local registry is a reference implementation. Production activation should use an independently protected configuration/control plane.
+## 6. Three result dimensions
 
-## 4. Evaluation semantics
+Audited evaluation distinguishes:
 
-V6 preserves the V4 monitor for compatibility and reports three distinct concepts:
-
-1. **base monitor result** — the original `PASS` / `FAIL` / `INCONCLUSIVE` property result;
-2. **system result** — fails when schema or causal/delegation validation fails, otherwise retains the base result;
+1. **base monitor result** — `PASS` / `FAIL` / `INCONCLUSIVE` from the original trace monitor;
+2. **system result** — additionally fails structural/schema/causal validation;
 3. **attestation integrity** — `VERIFIED` / `UNVERIFIED` / `INVALID`.
 
-A base `PASS` does not by itself imply trustworthy evidence.
+A bare `PASS` is not sufficient assurance evidence.
 
-`VERIFIED` requires, at minimum:
+## 7. Anti-fudging result attestation
 
-- all required checks represented in the manifest,
-- the configured check version meeting the minimum version,
-- deterministic replay consistency,
-- valid schema/causal structure,
-- concrete checker, schema, and policy artifact binding,
-- a valid Ed25519 signature from the supplied runner identity/key.
+`result_integrity.py` binds the result to SHA-256 digests of trace, raw result, checker, required-check manifest, schema, policy, configuration, environment, and optional Git identity. It enforces required-check completeness and minimum check version, performs deterministic replay, and optionally signs the attestation with Ed25519.
 
-Unsigned but structurally valid results are `UNVERIFIED`. Signed results that refer only to declared version strings rather than concrete schema/policy artifacts remain `UNVERIFIED`.
+`VERIFIED` requires concrete artifact binding plus a valid signature. Unsigned or version-label-only provenance remains `UNVERIFIED`. Omitted checks or rollback below the floor are `INVALID`.
 
-## 5. Result attestation
+## 8. Immutable human disposition
 
-An attestation binds:
+Humans may append `WAIVED`, `FALSE_POSITIVE`, `REQUIRES_INVESTIGATION`, or `ACCEPTED` dispositions, but cannot mutate the original machine verdict.
 
-- trace digest,
-- raw result digest,
-- checker source digest,
-- required/executed check manifest digest,
-- schema digest,
-- policy digest,
-- configuration digest,
-- execution-environment digest,
-- Git commit SHA when supplied,
-- check and minimum allowed versions,
-- machine verdict,
-- runner/signer identity.
+## 9. Audit chain and anchors
 
-Local key generation for demonstration:
+`TraceAuditStore` records sequence numbers, previous-record hashes, canonical record hashes, and optional Merkle checkpoints. Local checkpoints are tamper-evident only; production requires a separate trust domain such as WORM/object-lock storage or an independent transparency service.
 
-```bash
-assurance-trace-audit keygen \
-  --private-key /tmp/ata-private.pem \
-  --public-key /tmp/ata-public.pem
-```
+## 10. Assurance self-tests
 
-Private keys must not be committed to the repository.
+Known violations test the checker itself:
 
-## 6. Audit history and anchors
-
-`TraceAuditStore` writes canonical JSONL records with sequence numbers, previous-record hashes, and record hashes. It can also append a Merkle checkpoint over all prior record hashes:
-
-```bash
-assurance-trace-audit --audit-log /tmp/audit.jsonl \
-  anchor --external-reference ticket-or-transparency-reference
-```
-
-A local checkpoint does not by itself prevent a privileged actor from replacing the entire file and recomputing the chain. Production assurance should publish/checkpoint the root in independent WORM/object-lock storage, a transparency service, or an equivalent protected audit system.
-
-## 7. Machine results and human dispositions
-
-Human review cannot overwrite a machine verdict. A waiver/disposition is a separate audit record tied to the original run:
-
-```bash
-assurance-trace-audit --audit-log /tmp/audit.jsonl \
-  waiver examples/waiver.json
-```
-
-Supported dispositions are `WAIVED`, `FALSE_POSITIVE`, `REQUIRES_INVESTIGATION`, and `ACCEPTED`. The original result remains unchanged.
-
-## 8. Assurance self-tests
-
-V6 continuously tests the assurance logic using known seeded violations:
-
-- sensitive action without authorization,
-- high-risk self-approval,
-- expired authorization,
-- action after shutdown.
+- missing authorization,
+- self-approval,
+- expired grant,
+- post-shutdown action.
 
 ```bash
 assurance-trace-audit self-test
 ```
 
-A failed canary means the assurance infrastructure itself should not be trusted until investigated.
+Failure of a canary means assurance evidence should not be trusted until investigated.
 
-## 9. Field-issue feedback loop
+## 11. Field-issue feedback
 
-A confirmed field issue can be replayed against the deterministic monitor:
+Operational incidents can be replayed and classified as false negative, coverage gap, enforcement gap, false positive, or weak-check/review-needed. Analyses and proposed improvements enter the audit chain.
 
 ```bash
-assurance-trace-audit --audit-log /tmp/audit.jsonl \
-  field-issue examples/field_issue.json
+assurance-trace-audit --audit-log /tmp/audit.jsonl field-issue examples/field_issue.json
 ```
 
-The reference classifier distinguishes cases such as false negative, coverage gap, enforcement gap, false positive, and weak-check/review-required outcomes. It produces a reviewable check-update proposal and appends the analysis to the audit chain.
+## 12. Check-update governance
 
-This is deliberately conservative: it does not claim to infer the true root cause of arbitrary incidents using AI.
+Normal approved changes require separate proposer and approver. Check removal, policy weakening, or explicitly security-sensitive updates require a second independent approver. Existing versioned artifacts must not be overwritten; a new version is created instead.
 
-## 10. Check-update governance
+## 13. CI reliability hardening
 
-All approved updates require a distinct proposer and approver. A check removal, policy weakening, or explicitly security-sensitive change requires a second approver, yielding three distinct principals: proposer plus two approvers.
+The GitHub Actions workflow now separates Python package installation from Verilator/Icarus installation. EDA-tool installation uses package-manager retries, 30-second network timeouts, `--no-install-recommends`, a 5-minute step timeout, and a 10-minute job timeout. This prevents a mirror/network stall from looking like a hung V6 test.
 
-A production workflow should additionally require regression evidence before activation. V6 records `regression_evidence` in update records but does not yet implement an external release/approval service.
+## 14. Four integrity boundaries
 
-## 11. What V6 demonstrates
+V6 evaluates four different questions:
 
-When its tests and CI pass, V6 demonstrates a runnable reference implementation of:
+1. **Action integrity** — is the proposed effect authorized and supported?
+2. **Evaluation integrity** — was performance measured without answer/scoring leakage or evaluator conflict?
+3. **Result integrity** — were all required checks/artifacts/results authentic and complete?
+4. **Execution-environment integrity** — can untrusted AI/input exploit CI/CD identity, secrets, or production authority?
 
-- pre-action capability/evidence gating,
-- actual schema instance validation,
-- causal/delegation privilege checks,
-- field-issue replay and feedback records,
-- source/artifact-bound evaluation metadata,
-- omitted-check and rollback detection,
-- deterministic replay,
-- optional signed result attestations,
-- immutable human dispositions,
-- hash-linked audit history and local Merkle checkpoints,
-- assurance canary tests.
+Passing one boundary does not imply passing the others.
 
-It does **not** demonstrate production-grade prompt-injection resistance, complete hallucination detection, universal multi-agent correctness, trusted hardware execution, remote attestation, external transparency-log anchoring, or empirical safety improvement across real agent frameworks. Those require separate integration and controlled evaluation.
+## 15. Controlled evaluation roadmap
+
+The next empirical study should include benign and adversarial scenarios for:
+
+- prompt/tool injection,
+- parameter substitution,
+- stale or unverified evidence,
+- delegation amplification,
+- answer-key leakage through intermediate modules,
+- pre-commit scoring feedback,
+- evaluation-canary exposure,
+- scorer/system identity overlap,
+- untrusted PR/comment triggers on privileged CI runners,
+- secret exposure,
+- workflow/policy self-modification,
+- reviewed-artifact substitution,
+- check downgrade/omission,
+- field-issue recurrence after check updates.
+
+Metrics should include unsafe-action prevention, false-block/escalation rate, violation recall/precision, property/hazard coverage, evaluation-leakage detection, privileged-channel-dependent gain, CI privilege violations, attestation verification, canary detection, recurrence after check update, runtime overhead, and reviewer agreement.
+
+## 16. Trust boundary
+
+This is a reference implementation. It does not provide complete hallucination/prompt-injection detection, production IAM/tool interception, cryptographically trustworthy evaluation instrumentation, universal multi-agent semantics, trusted CI attestation, hardware roots of trust, or external transparency anchoring by default. Evaluation labels/provenance and CI workflow context must ultimately come from independently trustworthy instrumentation for strong claims.
