@@ -1,0 +1,27 @@
+{
+  "detection_id": "TD-2026-01987",
+  "incident_id": "INC-2026-1072",
+  "asset_id": "cloud-instance-441",
+  "account_id": "user-224",
+  "threat_id": "THREAT-2026-127",
+  "threat_version": "1.0.0",
+  "detector_id": "DET-051",
+  "detector_version": "2.3.0",
+  "detector_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "severity": "HIGH",
+  "techniques": ["T0001"],
+  "model_hypothesis": "Possible cloud credential theft",
+  "model_probability": 0.81,
+  "evidence_completeness": 0.83,
+  "source_agreement": 0.92,
+  "evidence": [
+    {
+      "evidence_id": "EV-2001",
+      "source": "cloudtrail",
+      "verified": true,
+      "freshness": "CURRENT",
+      "content_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "attributes": {"signal": "token-reuse"}
+    }
+  ]
+}
