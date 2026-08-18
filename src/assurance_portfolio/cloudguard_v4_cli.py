@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Mapping
 
+from jsonschema import Draft202012Validator
+
 from .cloudguard_v4 import (
     CloudGuardAuditStore,
     CloudGuardFeedbackEngine,
@@ -38,6 +40,12 @@ def _load(path: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ValueError("input must be a JSON object")
     return value
+
+
+def _validate_threat_schema(record: Mapping[str, object], schema_file: str) -> None:
+    schema = json.loads(Path(schema_file).read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(dict(record))
 
 
 def _source(data: Mapping[str, object]) -> ThreatSource:
@@ -85,11 +93,12 @@ def _regression(data: Mapping[str, object] | None) -> RegressionEvidence | None:
     )
 
 
-def _threat_update_payload(data: Mapping[str, object]) -> dict[str, object]:
+def _threat_update_payload(data: Mapping[str, object], *, schema_file: str) -> dict[str, object]:
     record_data = data.get("record")
     review_data = data.get("review")
     if not isinstance(record_data, Mapping) or not isinstance(review_data, Mapping):
         raise ValueError("threat update requires record and review objects")
+    _validate_threat_schema(record_data, schema_file)
     proposal = ThreatUpdateProposal(
         update_id=str(data["update_id"]),
         record=_threat_record(record_data),
@@ -180,6 +189,8 @@ def _response_payload(data: Mapping[str, object]) -> dict[str, object]:
             review_id=str(review_data["review_id"]),
             incident_id=str(review_data["incident_id"]),
             action=str(review_data["action"]),
+            target=str(review_data["target"]),
+            request_digest=str(review_data["request_digest"]),
             reviewer=str(review_data["reviewer"]),
             reviewer_trust_domain=str(review_data["reviewer_trust_domain"]),
             disposition=HumanDisposition(str(review_data["disposition"])),
@@ -191,7 +202,7 @@ def _response_payload(data: Mapping[str, object]) -> dict[str, object]:
     result = CloudGuardPolicyEngine().decide(request, evidence=detection.evidence, review=review)
     return {
         "detection": asdict(detection),
-        "request": asdict(request),
+        "request": asdict(request) | {"request_digest": request.request_digest},
         "review": asdict(review) if review else None,
         "policy_result": asdict(result),
     }
@@ -218,7 +229,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CloudGuard V4 assurance-governed SOC reference workflows")
     parser.add_argument("--audit-log", default=None, help="Optional JSONL audit file")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("threat-update", "response", "feedback"):
+
+    threat_update = sub.add_parser("threat-update")
+    threat_update.add_argument("input")
+    threat_update.add_argument(
+        "--schema-file",
+        default="schemas/cloudguard-threat/1.0.0.json",
+        help="Draft 2020-12 threat-record schema",
+    )
+    for name in ("response", "feedback"):
         child = sub.add_parser(name)
         child.add_argument("input")
     detect = sub.add_parser("record-detection")
@@ -242,7 +261,7 @@ def main() -> None:
 
     data = _load(args.input)
     if args.command == "threat-update":
-        payload = _threat_update_payload(data)
+        payload = _threat_update_payload(data, schema_file=args.schema_file)
         if store is not None:
             store.append("THREAT_DB_UPDATE", payload["audit_payload"])  # type: ignore[arg-type]
     elif args.command == "response":
@@ -251,11 +270,15 @@ def main() -> None:
             review = payload.get("review")
             if isinstance(review, Mapping):
                 store.append("HUMAN_REVIEW", review)
-            store.append("RESPONSE_POLICY_DECISION", {
-                "request": payload["request"],
-                "policy_result": payload["policy_result"],
-                "detection_id": payload["detection"]["detection_id"],  # type: ignore[index]
-            })
+            detection = payload["detection"]
+            store.append(
+                "RESPONSE_POLICY_DECISION",
+                {
+                    "request": payload["request"],
+                    "policy_result": payload["policy_result"],
+                    "detection_id": detection["detection_id"],  # type: ignore[index]
+                },
+            )
     elif args.command == "feedback":
         payload = _feedback_payload(data)
         if store is not None:
