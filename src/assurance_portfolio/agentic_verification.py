@@ -22,12 +22,16 @@ class ModelUsage:
     total_tokens: int = 0
 
     def delta(self, earlier: "ModelUsage") -> "ModelUsage":
+        requests = max(0, self.requests - earlier.requests)
+        input_tokens = max(0, self.input_tokens - earlier.input_tokens)
+        output_tokens = max(0, self.output_tokens - earlier.output_tokens)
+        total_tokens = max(0, self.total_tokens - earlier.total_tokens)
         return ModelUsage(
-            available=self.available or earlier.available,
-            requests=max(0, self.requests - earlier.requests),
-            input_tokens=max(0, self.input_tokens - earlier.input_tokens),
-            output_tokens=max(0, self.output_tokens - earlier.output_tokens),
-            total_tokens=max(0, self.total_tokens - earlier.total_tokens),
+            available=(input_tokens > 0 or output_tokens > 0 or total_tokens > 0),
+            requests=requests,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
         )
 
     def __add__(self, other: "ModelUsage") -> "ModelUsage":
