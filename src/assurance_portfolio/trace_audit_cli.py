@@ -62,7 +62,7 @@ def main() -> None:
     subparsers.add_parser("verify", help="Verify sequence, hash chain, and local Merkle anchors")
     subparsers.add_parser("self-test", help="Run mutation/canary tests against the assurance monitor")
 
-    field_issue = subparsers.add_parser("field-issue", help="Replay a field issue and propose a feedback classification")
+    field_issue = subparsers.add_parser("field-issue", help="Replay a field issue, append analysis, and propose feedback")
     field_issue.add_argument("input")
 
     keygen = subparsers.add_parser("keygen", help="Generate a local Ed25519 attestation keypair")
@@ -183,7 +183,8 @@ def main() -> None:
         if not isinstance(data, dict):
             raise ValueError("field-issue input must be a JSON object")
         analysis = FieldIssueAnalyzer().analyze(field_issue_from_dict(data))
-        print(json.dumps(asdict(analysis), indent=2))
+        record = store.append("field_issue_analysis", asdict(analysis))
+        print(json.dumps({"analysis": asdict(analysis), "audit_record": record}, indent=2))
         return
 
     if not isinstance(data, list):
