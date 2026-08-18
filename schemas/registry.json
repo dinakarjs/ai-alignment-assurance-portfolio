@@ -1,0 +1,18 @@
+{
+  "active": {
+    "agent-trace": "2.0.0"
+  },
+  "entries": [
+    {
+      "kind": "agent-trace",
+      "version": "2.0.0",
+      "digest": "computed-at-runtime",
+      "status": "ACTIVE",
+      "path": "agent-trace/2.0.0.json",
+      "previous_version": "1.0.0",
+      "compatibility": "MIGRATION_REQUIRED",
+      "proposer": "repository-maintainer",
+      "approver": "independent-review-required-for-production"
+    }
+  ]
+}
