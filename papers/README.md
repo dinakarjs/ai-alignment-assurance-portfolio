@@ -8,10 +8,12 @@ This directory collects written research artifacts supporting the runnable proto
 | --- | --- | --- | --- | --- |
 | CloudGuard AI | [CloudGuard AI: AI-Powered Autonomous Security Analyst](cloudguard-ai-course-report.md) | Amanchukwu Kenneth, John Nova, Dinakar J. Srinivasa | March 27, 2026 | Repository edition of a Golden Gate University DBA 808 course report; not peer reviewed |
 | CloudGuard AI | [AI-Powered Autonomous Cloud Security Analyst](cloudguard-ai-research-presentation.md) | Kenneth Amanchukwu, John Nova, Srinivasa J. Dinakar | 2026 | Companion research-presentation notes; not peer reviewed |
+| Multi-Agent Verification Copilot | [Role-Separated Multi-Agent Verification Copilot](multi-agent-verification-copilot-working-paper.md) | Srinivasa J. Dinakar | August 18, 2026 | Working paper and prototype report; not peer reviewed |
+| Alignment Assurance Lab | [Trace-Based Property Monitoring and Coverage for Tool-Using AI Agents](alignment-assurance-lab-working-paper.md) | Srinivasa J. Dinakar | August 18, 2026 | Working paper and prototype report; not peer reviewed |
 
 ## Manuscript status
 
-No completed manuscript or publication record was located for the **Agent Trace Assurance Engine** or **Multi-Agent Verification Copilot**. Their current evidence is the runnable code, automated tests, examples, and project documentation in this repository. Draft manuscripts should be added only after their claims, experiments, authorship, and references have been reviewed.
+The Verification Copilot and Alignment Assurance Lab documents are working papers grounded in the current prototypes and unit tests. They describe proposed experiments separately from completed validation. They are not accepted or peer-reviewed publications.
 
 ## Citation note
 
