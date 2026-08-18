@@ -32,9 +32,40 @@ def _git_sha() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _canonical_run_id(payload: dict[str, object]) -> str:
+def _canonical_id(payload: object) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _result_fingerprint(trials: tuple[CorpusTrial, ...]) -> list[dict[str, object]]:
+    """Stable result identity excluding wall-clock runtime and free-form notes."""
+
+    rows: list[dict[str, object]] = []
+    for trial in trials:
+        for result in trial.results:
+            rows.append(
+                {
+                    "trial_id": result.trial_id,
+                    "condition": result.condition,
+                    "case_id": result.case_id,
+                    "family": result.family,
+                    "assertion": result.assertion,
+                    "generation_succeeded": result.generation_succeeded,
+                    "reviewer_verdict": result.reviewer_verdict,
+                    "structural_valid": result.structural_valid,
+                    "behavioral_executed": result.behavioral_executed,
+                    "good_rtl_passed": result.good_rtl_passed,
+                    "mutation_detected": result.mutation_detected,
+                    "false_positive_count": result.false_positive_count,
+                    "fully_correct": result.fully_correct,
+                    "usage_available": result.usage_available,
+                    "model_requests": result.model_requests,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "total_tokens": result.total_tokens,
+                }
+            )
+    return rows
 
 
 def _flatten_rows(trials: Iterable[CorpusTrial]) -> list[dict[str, object]]:
@@ -69,6 +100,7 @@ def _markdown(summary: CorpusEvaluationSummary, manifest: dict[str, object]) -> 
     lines = [
         "# Verification Corpus Experiment Report",
         "",
+        f"**Experiment ID:** `{manifest['experiment_id']}`  ",
         f"**Run ID:** `{manifest['run_id']}`  ",
         f"**Evidence kind:** `{summary.evidence_kind}`  ",
         f"**Model:** `{summary.model_label or 'not applicable'}`  ",
@@ -116,7 +148,7 @@ def write_experiment_bundle(
 
     if not trials:
         raise ValueError("at least one trial is required")
-    identity = {
+    experiment_identity = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "evidence_kind": summary.evidence_kind,
         "model_label": summary.model_label,
@@ -126,12 +158,19 @@ def write_experiment_bundle(
         "rtl_root": rtl_root,
         "git_sha": _git_sha(),
     }
-    run_id = _canonical_run_id(identity)
+    experiment_id = _canonical_id(experiment_identity)
+    run_id = _canonical_id(
+        {
+            "experiment_id": experiment_id,
+            "results": _result_fingerprint(trials),
+        }
+    )
     output = Path(output_root) / run_id
     output.mkdir(parents=True, exist_ok=True)
 
     manifest: dict[str, object] = {
-        **identity,
+        **experiment_identity,
+        "experiment_id": experiment_id,
         "run_id": run_id,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "command": command,
