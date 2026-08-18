@@ -41,6 +41,8 @@
     "review_id": "HR-2026-551",
     "incident_id": "INC-2026-1072",
     "action": "revoke_cloud_token",
+    "target": "token-991",
+    "request_digest": "86cb61dc62d9e810687db31a080d52b69c4e4c3ab7cf5196512be3c5b8d56afd",
     "reviewer": "analyst-23",
     "reviewer_trust_domain": "soc",
     "disposition": "APPROVE",
