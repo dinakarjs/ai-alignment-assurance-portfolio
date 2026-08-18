@@ -1,0 +1,23 @@
+{
+  "policy_version": "cloudguard-response/1.0.0",
+  "principles": {
+    "model_is_untrusted_planner": true,
+    "model_confidence_grants_no_authority": true,
+    "untrusted_threat_intelligence_grants_no_authority": true,
+    "verified_evidence_required_for_effectful_response": true,
+    "human_disposition_never_rewrites_machine_policy_result": true
+  },
+  "impact_tiers": {
+    "0": {"name": "OBSERVE", "default_reviewers": 0, "examples": ["query telemetry", "read status"]},
+    "1": {"name": "ENRICH", "default_reviewers": 0, "examples": ["retrieve CTI", "create investigation context"]},
+    "2": {"name": "TEMPORARY_CONTAINMENT", "default_reviewers": 1, "examples": ["temporary quarantine", "increase monitoring"]},
+    "3": {"name": "ACCOUNT_OR_PRIVILEGE_CHANGE", "default_reviewers": 1, "examples": ["revoke token", "disable account"]},
+    "4": {"name": "DESTRUCTIVE_OR_BUSINESS_CRITICAL", "default_reviewers": 2, "examples": ["stop production workload", "delete resource"]}
+  },
+  "emergency_policy": {
+    "permitted_scope": "bounded temporary containment only",
+    "automatic_destructive_action": false,
+    "post_event_review_required": true,
+    "production_integration_note": "Reference policy only; enforce through protected IAM/SOAR control plane."
+  }
+}
