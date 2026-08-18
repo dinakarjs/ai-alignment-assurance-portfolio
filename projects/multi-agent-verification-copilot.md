@@ -1,102 +1,94 @@
 # Multi-Agent Verification Copilot
 
-**Status:** Applied research prototype with deterministic baseline and optional model-backed roles  
+**Status:** Applied research prototype with deterministic baseline, optional model-backed roles, and behavioral RTL mutation proof  
 **Theme:** AI-assisted verification with auditable role separation and tool-grounded acceptance
 
 ## Motivation
 
-Complex verification work requires specification analysis, assertion design, scenario generation, coverage planning, failure triage, and sign-off evidence. A single general-purpose assistant can blur these responsibilities and amplify unchecked mistakes. This project explores a role-separated copilot in which generation, adversarial review, deterministic verification, and human acceptance remain distinguishable stages.
+Complex verification work requires specification analysis, assertion design, scenario generation, coverage planning, failure triage, and sign-off evidence. A single assistant can blur these responsibilities and amplify unchecked mistakes. This project separates generation, adversarial review, deterministic verification, behavioral execution, and human acceptance.
 
-## Implemented V5 architecture
-
-V5 now contains two deliberately separate paths.
+## Implemented V6 architecture
 
 ### Deterministic baseline
 
-[`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) provides a dependency-free baseline with:
+[`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) provides:
 
 - requirement-quality review,
 - fail-safe complete-match grammar translation,
 - draft assertion generation,
 - pattern-specific scenarios and coverage goals,
 - independent artifact review, and
-- provenance through matched pattern and translation parameters.
+- matched-pattern/translation provenance.
 
 ### Model-backed path
 
 [`agentic_verification.py`](../src/assurance_portfolio/agentic_verification.py) adds:
 
-- a model-backed generator role,
-- a separate model-backed adversarial reviewer role,
+- model-backed generator role,
+- separate adversarial reviewer role,
 - strict JSON contracts,
-- reviewer outcomes `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, and `ABSTAIN`,
-- recorded generator/reviewer backend identity, and
+- reviewer outcomes `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, `ABSTAIN`,
+- recorded backend identity, and
 - deterministic validation as an acceptance gate.
 
-The repository includes an OpenAI Responses API backend for live use and a scripted backend for reproducible tests. Distinct calls/objects provide workflow separation, but this does not guarantee statistical independence when both roles use the same model family.
+The repository includes an OpenAI Responses API backend for live use and scripted backends for reproducible tests. Distinct calls provide workflow separation but do not guarantee statistical independence when the same model family is used.
 
-## Deterministic verification gate
+## Deterministic validation and behavioral evidence
 
-[`sva_validation.py`](../src/assurance_portfolio/sva_validation.py) separates:
+[`sva_validation.py`](../src/assurance_portfolio/sva_validation.py) distinguishes structural checks from real Verilator assertion/tool acceptance.
 
-- shallow dependency-free structural validation, and
-- an optional Verilator adapter that submits a standalone assertion probe to a concrete installed tool.
+V6 adds [`rtl_behavioral.py`](../src/assurance_portfolio/rtl_behavioral.py), which compiles and simulates two request/grant RTL fixtures using Icarus Verilog:
 
-A candidate reaches `accepted_for_human_review=true` only if the model reviewer sends it to the tool check and the configured validator returns `VALID`. This state means the candidate may proceed to expert review; it is not design sign-off.
+- `handshake_good.sv` must satisfy `grant shall assert within 4 cycles after request`.
+- `handshake_late_bug.sv` contains a deliberately seeded late-grant mutation and must violate that requirement.
 
-## Benchmark evidence
+The benchmark is successful only when the good design passes and the mutation fails. Compile errors or missing tools are not counted as defect detection. CI runs this as a dedicated behavioral-proof job.
 
-[`verification_benchmark.py`](../src/assurance_portfolio/verification_benchmark.py) runs a labelled synthetic trace benchmark for bounded-response and prohibition requirements and reports defect detection, accuracy, and false positives.
+## Evidence layers
 
-The [`benchmarks/rtl`](../benchmarks/rtl) fixtures add a small request/grant design plus a labelled late-grant mutation. V5 does not yet claim behavioural detection of that RTL defect; simulator/formal execution remains the next benchmark step.
+The project deliberately keeps four claims separate:
 
-## Safety and assurance relevance
+1. deterministic grammar/reference output,
+2. model proposal/review,
+3. standalone tool acceptance of an assertion,
+4. behavioral RTL execution against labelled mutations.
 
-The workflow makes several failure modes observable instead of implicit:
+A candidate reaching `accepted_for_human_review=true` is not design sign-off. Behavioral success on one labelled fixture is not evidence of general SoC-scale correctness.
 
-- unsupported semantics can fall back or trigger reviewer revision,
-- model outputs are not treated as executable evidence by default,
-- reviewer disagreement/abstention becomes a human-escalation signal,
-- tool acceptance is recorded separately from model plausibility, and
-- deterministic baseline output remains available for comparison.
+## Current benchmark evidence
 
-The same separation can be applied to agentic AI assurance: proposer, reviewer, policy monitor, execution gate, and human authority need not be collapsed into one model response.
+The repository now includes:
+
+- a synthetic labelled trace benchmark for bounded response and prohibition,
+- a real Verilator tool-validation CI job,
+- labelled request/grant RTL fixtures,
+- a real Icarus Verilog behavioral benchmark for good-versus-mutated RTL.
+
+The next experimental question is no longer whether the plumbing runs. It is whether model-backed role separation improves verification outcomes relative to deterministic and single-model baselines.
 
 ## Controlled evaluation plan
 
-The intended experimental comparison is:
+Compare:
 
-1. deterministic grammar baseline,
+1. deterministic grammar/reference-property baseline,
 2. single model-generated artifact,
-3. generator + reviewer model calls without deterministic gating,
-4. generator + independent reviewer + deterministic verification-tool gate.
-
-Use compact public RTL blocks with seeded mutations, independently authored reference properties, labelled traces, and deliberately ambiguous/paraphrased requirements.
+3. model generator + independent reviewer,
+4. model generator + reviewer + deterministic tool/behavioral feedback.
 
 Measure:
 
-- requirement recall/precision,
-- assertion tool acceptance,
-- semantic correctness against reference traces,
-- vacuity where measurable,
-- seeded-defect detection,
+- assertion parse/tool acceptance,
+- behavioral mutation detection,
 - false positives,
-- fallback/abstention behaviour,
+- vacuity where measurable,
+- abstention/escalation behavior,
 - human review effort,
 - latency and model/tool cost.
 
 ## Current trust boundary
 
-V5 proves that the orchestration, role contracts, acceptance gate, Verilator integration, and synthetic benchmark run as software. It does **not** establish that model-backed generation is better than the deterministic baseline, that Verilator acceptance equals semantic correctness, or that the seeded RTL mutation is detected in simulation/formal execution.
-
-## Key risks
-
-- Generator and reviewer may share model-level blind spots.
-- Tool acceptance can validate syntax/support without validating design intent.
-- Public toy RTL may overstate transfer to SoC-scale verification.
-- Seeded defects can differ from organic specification or implementation failures.
-- Human review may shift rather than reduce total effort.
+V6 proves that the role contracts, acceptance gates, external Verilator integration, synthetic benchmarks, and one behavioral RTL mutation test run as software when CI passes. It does **not** establish that model-backed generation is better than the deterministic baseline, that one seeded defect generalizes to proprietary SoCs, or that tool acceptance equals design intent.
 
 ## Working paper
 
-[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) documents the V5 architecture, current evidence, limitations, and next controlled experiment.
+[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) documents the architecture, evidence layers, limitations, and controlled-evaluation plan.
