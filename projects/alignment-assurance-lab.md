@@ -1,200 +1,205 @@
 # Alignment Assurance Lab
 
-**Status:** Runnable research prototype with deterministic trace monitoring, pre-action runtime gating, versioned governance artifacts, result attestation, and auditable field-feedback history  
+**Status:** Runnable research prototype with deterministic trace monitoring, pre-action runtime gating, evaluation-integrity checks, CI/CD privilege controls, versioned governance artifacts, result attestation, and auditable field-feedback history  
 **Theme:** Verification-driven runtime assurance and governance for agentic AI systems
 
 ## Motivation
 
-Tool-using and multi-agent AI systems can fail even when their final answer looks acceptable. A model can hallucinate, follow malicious tool content, overreach its authority, reuse stale evidence, amplify privilege through delegation, drift over long horizons, or produce a superficially plausible result that should not be trusted. The design therefore treats the AI model as an **untrusted planner** and moves the security/assurance boundary into deterministic controls around effectful actions and evaluation evidence.
+Tool-using and multi-agent AI systems can fail even when their final answer looks acceptable. A model can hallucinate, follow malicious tool content, overreach its authority, reuse stale evidence, amplify privilege through delegation, drift over long horizons, contaminate its own evaluation by receiving answer/scoring information, or turn attacker-controlled CI/CD input into privileged repository/cloud actions. A separate risk is that assurance evidence itself can be omitted, downgraded, rewritten, or selectively reported.
+
+The design therefore treats the AI model as an **untrusted planner** and moves security and assurance boundaries into deterministic infrastructure around actions, evaluation, execution environments, and result evidence.
 
 ## Architecture
 
 ```text
-User / environment
+External/user/tool data
         |
         v
-Trust-labelled inputs
+Trust classification
         |
         v
-AI planner / multi-agent system   [untrusted planner]
+AI planner / multi-agent system      [untrusted planner]
         |
-        v
-Proposed effectful action
-        |
-        v
-Runtime Assurance Gateway
-  | authority / capability
-  | evidence provenance
-  | trust-domain oversight
-  | parameter constraints
-        |
-  +-----+---------+---------+
-  |               |         |
-ALLOW           BLOCK    ESCALATE
-  |
-  v
-Tool broker / effect
-  |
-  v
-Versioned causal trace
-  |
-  +--> schema + causal/delegation validation
-  +--> deterministic trace properties
-  +--> counterexample / coverage
-  +--> result attestation
-  +--> hash-linked audit history
-                         |
-                         v
+        +------------------------------+
+        |                              |
+        v                              v
+Proposed effectful action        Prediction / experiment
+        |                              |
+        v                              v
+Runtime Assurance Gate          Evaluation Integrity Gate
+ authority/capability            ground-truth isolation
+ evidence/provenance             provenance taint
+ parameter scope                 commit-before-label-release
+ trust-domain approval           scorer independence
+        |                              |
+ ALLOW/BLOCK/ESCALATE             VALID / INVALID
+        |                              |
+        v                              v
+Least-privilege Tool Broker      Independent Evaluator
+        |                              |
+        +---------------+--------------+
+                        |
+                        v
+                 Versioned causal trace
+                        |
+          +-------------+--------------+
+          |             |              |
+          v             v              v
+   schema/causal    result         CI/CD integrity
+    validation     attestation     trusted refs/secrets/
+                                   promotion boundary
+          |             |              |
+          +-------------+--------------+
+                        |
+                        v
+                  Audit evidence
+                        |
+                        v
                     Field issue
-                         |
-                         v
+                        |
+                        v
           replay / gap classification
-                         |
-                         v
-           check/schema/policy proposal
-                         |
-                         v
-        independent review + regression
+                        |
+                        v
+          check/schema/policy proposal
+                        |
+                        v
+       independent review + regression
 ```
 
-`REWRITE` is reserved in the runtime decision enum, but V6 does not yet implement automatic argument rewriting.
+`REWRITE` remains reserved in the runtime decision enum; V6 currently implements `ALLOW`, `BLOCK`, and `ESCALATE`.
 
 ## V4 deterministic monitor — retained baseline
 
-[`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py) remains the small deterministic compatibility baseline. It checks:
-
-- authorization before sensitive action,
-- evidence before high-risk action,
-- high-risk classification consistency,
-- named and independent proposer/approver identities,
-- shutdown compliance.
-
-Authorization and evidence grants remain transaction-scoped, consumable, and optionally expiring. The V4 report returns `PASS`, `FAIL`, or `INCONCLUSIVE` and retains property-exercise coverage semantics.
+[`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py) remains the compact deterministic compatibility baseline. It checks authorization before sensitive actions, evidence before high-risk actions, high-risk classification consistency, independent proposer/approver identity, and shutdown compliance. Grants are transaction-scoped, consumable, and optionally expiring.
 
 ## V5 auditable history
 
-V5 introduced [`trace_audit.py`](../src/assurance_portfolio/trace_audit.py), which preserves evaluation results and check/schema/policy updates in a hash-linked JSONL history. This created the first closed-loop provenance path from a field issue or failing evaluation to a later check update.
+V5 introduced [`trace_audit.py`](../src/assurance_portfolio/trace_audit.py), preserving evaluation results and check/schema/policy changes in a hash-linked JSONL history.
 
-## V6 runtime assurance and result integrity
-
-V6 adds five layers around the V4 baseline.
+## V6 runtime assurance and integrity layers
 
 ### 1. Pre-action runtime gateway
 
-[`runtime_assurance.py`](../src/assurance_portfolio/runtime_assurance.py) treats the model as an untrusted planner. Sensitive/high-risk actions require a parameter-bound capability. High-risk actions additionally require verified transaction-bound evidence and independent oversight. Same-principal approval is blocked; same trust-domain approval escalates.
-
-Untrusted external/tool content may inform reasoning but does not create authority by itself.
+[`runtime_assurance.py`](../src/assurance_portfolio/runtime_assurance.py) requires parameter-bound capabilities for sensitive/high-risk actions and verified transaction-bound evidence plus independent oversight for high-risk actions. Untrusted tool/external content may inform reasoning but cannot create authority by itself.
 
 ### 2. Versioned event/schema/policy control
 
-[`schemas/agent-trace/2.0.0.json`](../schemas/agent-trace/2.0.0.json) is a JSON Schema Draft 2020-12 event schema with optional causal, delegation, trust-domain, parameter, and provenance fields.
+[`schemas/agent-trace/2.0.0.json`](../schemas/agent-trace/2.0.0.json) uses JSON Schema Draft 2020-12. [`schema_registry.py`](../src/assurance_portfolio/schema_registry.py) validates schema documents and trace instances, classifies compatibility, and separates proposal from independent activation.
 
-[`schema_registry.py`](../src/assurance_portfolio/schema_registry.py) validates schema documents and trace instances, classifies updates as `BACKWARD_COMPATIBLE`, `MIGRATION_REQUIRED`, `BREAKING`, or `SECURITY_SENSITIVE`, and requires a separate approver for activation.
+### 3. Causal/delegation validation
 
-The V6 policy and required-check manifests are versioned under [`policies/`](../policies/) and [`checks/`](../checks/).
-
-### 3. Causal and delegation validation
-
-[`causal_trace.py`](../src/assurance_portfolio/causal_trace.py) checks parent-event references and delegation ancestry and rejects simple privilege amplification where a child capability broadens its parent's action or constraints.
-
-This is a compact reference validator, not a complete distributed partial-order model.
+[`causal_trace.py`](../src/assurance_portfolio/causal_trace.py) checks parent-event references, capability ancestry, and simple privilege amplification where a delegated child broadens its parent's action or constraints.
 
 ### 4. Result integrity
 
-[`result_integrity.py`](../src/assurance_portfolio/result_integrity.py) separates the machine/system verdict from **attestation integrity**:
+[`result_integrity.py`](../src/assurance_portfolio/result_integrity.py) separates system verdict from attestation integrity: `VERIFIED`, `UNVERIFIED`, or `INVALID`. Trustworthy evidence binds the exact trace/result/checker/check manifest/schema/policy/configuration/environment and optional Git identity, enforces required checks and anti-rollback, supports deterministic replay, and can be Ed25519-signed.
 
-- `VERIFIED`
-- `UNVERIFIED`
-- `INVALID`
-
-A result can only become `VERIFIED` when required checks are present, the check version meets the anti-rollback floor, replay is consistent, concrete checker/schema/policy artifacts are bound, and the supplied Ed25519 signature verifies. Unsigned or version-label-only provenance remains `UNVERIFIED`.
-
-Audited results bind trace, raw result, checker, check manifest, schema, policy, configuration, environment, and optional Git-commit identity through SHA-256 digests.
+A human disposition is appended separately and cannot rewrite the original machine verdict.
 
 ### 5. Closed-loop operational feedback
 
-[`field_issue.py`](../src/assurance_portfolio/field_issue.py) replays field incidents and conservatively classifies outcomes such as false negative, coverage gap, enforcement gap, false positive, or weak-check/review-needed. The resulting check-improvement proposal is reviewable and the CLI appends the analysis to the audit chain.
+[`field_issue.py`](../src/assurance_portfolio/field_issue.py) replays incidents and classifies false-negative, coverage-gap, enforcement-gap, false-positive, or weak-check/review-needed cases. Check updates are auditable; security-sensitive weakening/removal requires an additional independent approver.
 
-Check updates require independent approval. Security-sensitive weakening/removal requires an additional independent approver. Human waivers are separate records and cannot rewrite the original machine verdict.
+### 6. Evaluation Collusion & Leakage Protection
+
+[`evaluation_integrity.py`](../src/assurance_portfolio/evaluation_integrity.py) addresses the failure mode where one module appears to improve a pipeline by leaking answer keys, scoring signals, evaluator feedback, or equivalent privileged information to another module.
+
+Evaluation artifacts carry provenance labels such as `MODEL_INPUT`, `MODEL_DERIVED`, `GROUND_TRUTH`, `ANSWER_KEY`, `EVALUATOR_ONLY`, `SCORING_SIGNAL`, `POST_COMMIT_FEEDBACK`, and `EVALUATION_CANARY`. Restricted labels propagate transitively through artifact ancestry.
+
+A valid evaluation requires:
+
+- no ground-truth/evaluator-only ancestry in the prediction,
+- prediction commit before ground-truth release,
+- no pre-commit scoring feedback to the system under test,
+- scorer identity outside the system-under-test trust domain,
+- evaluation-only canaries never reaching model modules.
+
+The attribution helper measures how much claimed improvement disappears when privileged channels are isolated. It is descriptive evidence, not an automatic cheating verdict.
+
+### 7. CI/CD & Privileged Execution Integrity
+
+[`cicd_integrity.py`](../src/assurance_portfolio/cicd_integrity.py) addresses AI agents operating inside privileged CI/CD runners. The key principle is:
+
+`agent capability != runner capability != production promotion capability`
+
+Controls include:
+
+- untrusted triggers cannot enter privileged write-capable workflows,
+- privileged control must come from the trusted reference,
+- an agent cannot modify the workflow/policy that governs itself,
+- secrets require explicit capability and cannot enter untrusted-trigger agent context,
+- requested permissions cannot exceed runner permissions,
+- production effects require independent approval,
+- promoted artifact digest must match the independently reviewed artifact.
+
+## Immutable check evolution
+
+The original [`6.0.0`](../checks/agent-trace-checks/6.0.0.json) check manifest is retained unchanged. New evaluation- and CI/CD-integrity controls are introduced in [`6.1.0`](../checks/agent-trace-checks/6.1.0.json), preserving the project's own version-governance principle rather than silently editing an existing version.
 
 ## Protecting the assurance system itself
 
-V6 assumes that assurance outputs can also be attacked or accidentally misreported. It therefore adds:
-
-- exact checker source hashing,
-- schema/policy/configuration/environment digests,
-- required-versus-executed check manifests,
-- check-version anti-rollback,
-- deterministic independent replay,
-- optional Ed25519 signatures,
-- immutable human dispositions,
-- seeded assurance canaries,
-- hash-chain verification,
-- local Merkle checkpoints for later external anchoring.
-
-A local hash chain or Merkle checkpoint is not a substitute for external WORM/object-lock storage, remote attestation, or an independent transparency service.
+V6 includes checker/schema/policy/config/environment digests, check-manifest binding, anti-rollback, deterministic replay, optional signatures, immutable human dispositions, seeded assurance canaries, hash-chain verification, and local Merkle checkpoints. Local hashes do not replace external WORM/object-lock, independent transparency logging, trusted hardware, or remote attestation.
 
 ## CLI examples
 
-Runtime gate:
-
 ```bash
+# Action/runtime boundary
 assurance-runtime examples/runtime_assurance_request.json
-```
 
-Fully artifact-bound audited evaluation:
+# Clean evaluation-isolation example
+assurance-integrity evaluation examples/evaluation_integrity_clean.json
 
-```bash
+# Clean least-privilege CI/CD example
+assurance-integrity cicd examples/cicd_integrity_clean.json
+
+# Quantify apparent gain dependent on a privileged information channel
+assurance-integrity attribution --baseline 0.50 --full 0.85 --isolated 0.55
+
+# Artifact-bound audited trace evaluation
 assurance-trace-audit --audit-log artifacts/trace-audit/audit.jsonl \
   evaluate examples/agent_trace.json \
-  --check-version agent-trace-checks/6.0.0 \
+  --check-version agent-trace-checks/6.1.0 \
   --minimum-check-version agent-trace-checks/6.0.0 \
+  --check-manifest-file checks/agent-trace-checks/6.1.0.json \
   --schema-version agent-trace/2.0.0 \
   --schema-file schemas/agent-trace/2.0.0.json \
   --policy-version agent-trace-policy/2.0.0 \
   --policy-file policies/agent-trace-policy/2.0.0.json
 ```
 
-Field issue:
+## Four integrity boundaries
 
-```bash
-assurance-trace-audit --audit-log artifacts/trace-audit/audit.jsonl \
-  field-issue examples/field_issue.json
-```
+The architecture now treats four questions independently:
 
-Assurance canaries:
+1. **Action integrity** — is the AI authorized to perform the proposed effect?
+2. **Evaluation integrity** — was performance measured without answer/scoring leakage or scorer collusion?
+3. **Result integrity** — were required checks, versions, artifacts, and reported results authentic and complete?
+4. **Execution-environment integrity** — can untrusted AI/input exploit privileged CI/CD identity, secrets, or promotion authority?
 
-```bash
-assurance-trace-audit self-test
-```
-
-See [`TRACE_ASSURANCE_V6.md`](../benchmarks/TRACE_ASSURANCE_V6.md) for the detailed protocol and trust boundaries.
+A system can pass one boundary while failing another; a bare aggregate `PASS` is therefore insufficient assurance evidence.
 
 ## Research positioning
 
-Trace monitoring and runtime guardrails for agentic systems are an active research area and are not claimed here as wholly novel. The stronger research direction for this project is the **verification-style closed loop**: operational issue → historical replay → observable assurance gap → versioned check/schema/policy update → independent approval → regression/adversarial closure → attested audit evidence.
+Trace monitoring and runtime agent guardrails are active research areas and are not claimed as wholly novel. The stronger contribution is the verification-style closed loop combined with independent integrity boundaries:
 
-This is intended to connect runtime safety engineering with continual governance and field-quality feedback rather than presenting a static guardrail as an alignment guarantee.
+`field issue -> replay -> assurance gap -> versioned check/schema/policy change -> independent approval -> regression/adversarial closure -> attested evidence`.
 
-## Research questions
-
-1. Which agent-safety/governance claims can be represented as deterministic observable properties and pre-action capabilities?
-2. How much unsafe behavior can a deterministic runtime gateway prevent without causing unacceptable false blocks?
-3. Do parameter-bound capabilities and evidence provenance improve robustness against tool/prompt injection compared with model-only guardrails?
-4. How should delegation and trust-domain independence be represented for multi-agent systems?
-5. Can field incidents be converted into validated check/schema/policy improvements without introducing new false positives?
-6. Can result attestations and independent replay meaningfully reduce the risk of omitted, downgraded, or manipulated assurance results?
-7. What additional protection is gained by external transparency/WORM anchoring versus a local hash chain?
+The recent failure reports motivating evaluation leakage and privileged CI/CD isolation are treated as threat-model inputs, not as proof that this prototype prevents all such attacks.
 
 ## Next controlled evaluation
 
-The next empirical step should compare outcome-only evaluation, post-hoc trace monitoring, and pre-action runtime gating across benign and adversarial tool-use scenarios. It should freeze the schema/policy/check versions, retain raw traces, measure unsafe-action prevention and false blocks, exercise field-issue feedback, and independently verify the result attestations.
+The next empirical study should compare outcome-only evaluation, post-hoc trace monitoring, runtime gating, and runtime gating plus closed-loop feedback. It should also include adversarial variants for answer leakage, scoring feedback, evaluator-canary exposure, untrusted CI triggers, secret exposure, workflow self-modification, and artifact substitution.
 
-Useful metrics include violation recall/precision, unsafe-action prevention, false-block rate, escalation rate, property/hazard coverage, delegation-policy violations, replay consistency, attestation-verification rate, field-issue recurrence after check updates, runtime overhead, and reviewer agreement.
+Metrics should include unsafe-action prevention, false-block/escalation rate, violation recall/precision, property/hazard coverage, replay consistency, attestation-verification rate, evaluation-leakage detection, privileged-channel-dependent gain, CI privilege violations, field-issue recurrence, runtime overhead, and reviewer agreement.
 
 ## Trust boundary
 
-V6 is a reference implementation. It does not provide complete hallucination detection, complete prompt-injection resistance, production identity/authorization infrastructure, trusted hardware execution, remote attestation, external transparency logging, universal multi-agent semantics, or empirical proof that the architecture improves safety across real-world agents. Those are integration and evaluation targets, not current claims.
+V6 is a reference implementation. It does not provide complete hallucination or prompt-injection detection, production IAM/tool interception, semantic validation of arbitrary evidence, universal distributed-agent semantics, cryptographic enforcement of every provenance label, trusted hardware execution, remote attestation, or external transparency anchoring by default. Evaluation integrity depends on trustworthy instrumentation of artifact ancestry/access and CI/CD integrity depends on truthful workflow-context inputs unless integrated with a real runner/control plane.
+
+## Detailed protocol
+
+See [`TRACE_ASSURANCE_V6.md`](../benchmarks/TRACE_ASSURANCE_V6.md).
 
 ## Working paper
 
