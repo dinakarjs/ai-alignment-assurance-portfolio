@@ -25,5 +25,6 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Smoke-test CLI
         run: |
+          assurance-demo cloudguard examples/cloudguard_incident.json
           assurance-demo trace examples/agent_trace.json
           assurance-demo copilot examples/requirements.json
