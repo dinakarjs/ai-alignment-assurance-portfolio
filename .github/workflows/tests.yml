@@ -72,3 +72,10 @@ jobs:
         run: assurance-demo controlled-eval --rtl-root benchmarks/rtl
       - name: Exercise V8 multi-family repeated corpus
         run: assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 2
+      - name: Exercise V9 experiment artifact bundle
+        run: |
+          assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 1 --output-root /tmp/assurance-experiments
+          test -f /tmp/assurance-experiments/*/manifest.json
+          test -f /tmp/assurance-experiments/*/results.csv
+          test -f /tmp/assurance-experiments/*/aggregates.csv
+          test -f /tmp/assurance-experiments/*/REPORT.md

@@ -1,8 +1,8 @@
 # AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
 
-This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. The implementation deliberately separates deterministic baselines, model-backed proposal/review, tool acceptance, behavioral RTL evidence, and controlled comparative evaluation.
+This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. It deliberately separates deterministic baselines, model-backed proposal/review, tool acceptance, behavioral RTL evidence, comparative evaluation, and experiment reporting.
 
-1. **Verification Copilot V8** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic validation, multi-family RTL mutation benchmarks, and repeated-trial workflow comparison.
+1. **Verification Copilot V9** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic validation, multi-family RTL mutation benchmarks, repeated-trial comparison, model usage telemetry, and reproducible experiment bundles.
 2. **Agent Trace Assurance Engine V4** - scoped/consumable/expiring authorization and evidence, high-risk classification checks, independent approval, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
 3. **CloudGuard AI V3** - transparent threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
 
@@ -47,17 +47,19 @@ assurance-demo agentic examples/requirements.json --validator verilator
 
 The workflow performs separate generator and reviewer model calls. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft reaches `accepted_for_human_review=true` only when the reviewer sends it forward and the configured deterministic validator returns `VALID`. This remains a human-review gate, not design sign-off.
 
-## Verification Copilot V8
+## Verification Copilot V9
 
 ### Deterministic baseline
 
-[`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, performs requirement-quality review, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios and coverage goals, and independently reviews generated artifacts.
+[`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, performs requirement-quality review, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios and coverage goals, and independently reviews generated artifacts. Unsupported trailing semantics force fallback rather than being silently discarded.
 
-A requirement is marked **SUPPORTED** only when its complete normalized text matches an explicit grammar. Unsupported trailing semantics force fallback rather than being silently discarded.
+### Model-backed roles and usage telemetry
 
-### Model-backed roles
+[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds separate generator and adversarial reviewer roles behind a minimal backend interface. `OpenAIResponsesBackend` performs live calls; `ScriptedModelBackend` provides deterministic offline/CI testing.
 
-[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds separate generator and adversarial reviewer roles behind a minimal backend interface. `OpenAIResponsesBackend` provides live calls and `ScriptedModelBackend` provides deterministic offline/CI testing. Separate calls do not guarantee statistical independence when both roles use the same model family.
+V9 additionally records cumulative request and token usage when a backend provides it. The OpenAI Responses backend captures input, output, and total token counts from the API response. Scripted backends record request counts but explicitly leave token telemetry unavailable.
+
+Separate model calls do not guarantee statistical independence when both roles use the same model family.
 
 ### Deterministic validation
 
@@ -67,20 +69,22 @@ A requirement is marked **SUPPORTED** only when its complete normalized text mat
 
 ### V6 request/grant mutation proof
 
-[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) executes the request/grant bounded-response requirement against:
-
-- `handshake_good.sv`, expected to pass, and
-- `handshake_late_bug.sv`, expected to fail.
-
-Compile/tool failures do not count as mutation detection.
+[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) executes the request/grant bounded-response requirement against a known-good implementation and a deliberately late-grant mutation. Compile/tool failures do not count as mutation detection.
 
 ### V7 four-condition comparison
 
-[`controlled_evaluation.py`](src/assurance_portfolio/controlled_evaluation.py) compares deterministic, single-model, generator+reviewer, and generator+reviewer+tool-gated workflows on the same request/grant mutation pair. It distinguishes mutation detection from false-positive behavior and records reviewer escalation separately from execution.
+[`controlled_evaluation.py`](src/assurance_portfolio/controlled_evaluation.py) compares:
 
-## V8 multi-family benchmark corpus
+1. deterministic,
+2. single model,
+3. generator + reviewer,
+4. generator + reviewer + tool gate.
 
-V8 broadens the behavioral corpus to three temporal requirement families, each with known-good and mutated RTL:
+The evaluator distinguishes mutation detection from false-positive behavior and records reviewer escalation separately from execution.
+
+### V8 multi-family benchmark corpus
+
+V8 broadened the behavioral corpus to three temporal requirement families, each with known-good and mutated RTL:
 
 | Case | Family | Requirement |
 |---|---|---|
@@ -88,48 +92,49 @@ V8 broadens the behavioral corpus to three temporal requirement families, each w
 | PR-001 | prohibition | `grant shall never assert while reset` |
 | IM-001 | immediate implication | `if request is high, busy shall be high` |
 
-The new RTL fixtures are:
+[`corpus_benchmark.py`](src/assurance_portfolio/corpus_benchmark.py) parses supported candidate assertion families and executes each candidate against the matching good/mutated RTL pair with Icarus Verilog.
 
-- `handshake_good.sv` / `handshake_late_bug.sv`
-- `prohibition_good.sv` / `prohibition_bug.sv`
-- `implication_good.sv` / `implication_bug.sv`
-
-[`corpus_benchmark.py`](src/assurance_portfolio/corpus_benchmark.py) parses the supported candidate assertion families and executes each candidate against the matching good/mutated RTL pair with Icarus Verilog.
-
-[`corpus_evaluation.py`](src/assurance_portfolio/corpus_evaluation.py) applies the same four workflow conditions across the full corpus and aggregates repeated trials.
-
-Per-condition metrics include:
-
-- generation-failure rate,
-- reviewer escalation rate,
-- behavioral-execution rate,
-- **full-correct rate**: good RTL passes and mutation is detected,
-- mutation-detection rate among executed cases,
-- false-positive rate on known-good RTL,
-- mean elapsed wall-clock time.
+[`corpus_evaluation.py`](src/assurance_portfolio/corpus_evaluation.py) applies the four workflow conditions across the corpus and aggregates repeated trials. Metrics include generation failure, reviewer escalation, behavioral execution, full-correct rate, mutation detection, false positives, elapsed time, model requests, and token usage when available.
 
 A candidate that detects a mutation but falsely rejects known-good RTL is **not** counted as fully correct.
 
-### Scripted/offline repeated trials
+## V9 reproducible experiment artifacts
+
+V9 converts repeated corpus runs into reusable evidence bundles rather than console-only output.
+
+A scripted/offline run can opt in:
 
 ```bash
-assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 3
+assurance-demo corpus-eval \
+  --rtl-root benchmarks/rtl \
+  --trials 3 \
+  --output-root artifacts/experiments
 ```
 
-This mode validates the multi-family evaluation and aggregation machinery. It deliberately includes a too-strict bounded-response candidate and a reviewer escalation so that false-positive and abstention metrics are exercised. It is **not empirical model-quality evidence**.
-
-### Live-model repeated trials
+A live-model run writes an experiment bundle by default:
 
 ```bash
 python -m pip install -e ".[agentic]"
 export OPENAI_API_KEY="..."
 export OPENAI_MODEL="..."
-assurance-demo corpus-eval-live --rtl-root benchmarks/rtl --trials 3
+assurance-demo corpus-eval-live \
+  --rtl-root benchmarks/rtl \
+  --trials 3 \
+  --output-root artifacts/experiments
 ```
 
-Live runs use fresh model calls for every case and trial and record `evidence_kind=live_model`, the configured model label, and prompt version `v8.0`. A small number of runs on this toy corpus is still not sufficient to claim workflow superiority.
+Each run directory contains:
 
-See [`benchmarks/V8_CORPUS.md`](benchmarks/V8_CORPUS.md).
+- `manifest.json` - experiment ID, run ID, evidence/model/prompt configuration, git SHA where available, invocation and environment;
+- `trials.json` - complete structured trial output;
+- `summary.json` - aggregate metrics;
+- `results.csv` - row-level case/workflow observations;
+- `aggregates.csv` - per-condition summary metrics;
+- `REPORT.md` - a compact human-readable report with an explicit interpretation boundary.
+
+The **experiment ID** hashes the recorded configuration and code identity. The **run ID** hashes the experiment ID plus outcome-bearing trial fields, so stochastic reruns can share the same experiment configuration without overwriting different observed results. Dollar cost is deliberately left unset because pricing is model- and date-dependent; historical token counts should be joined to an explicitly dated pricing table rather than silently repriced.
+
+See [`benchmarks/V8_CORPUS.md`](benchmarks/V8_CORPUS.md) and [`benchmarks/V9_EXPERIMENT_ARTIFACTS.md`](benchmarks/V9_EXPERIMENT_ARTIFACTS.md).
 
 ## CI
 
@@ -139,13 +144,12 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 GitHub Actions runs:
 
-- Python 3.10 unit tests and CLI smoke tests,
-- Python 3.11 unit tests and CLI smoke tests,
-- Python 3.12 unit tests and CLI smoke tests,
-- a real Verilator assertion-validation job,
-- the V6 Icarus request/grant mutation proof,
-- the V7 scripted four-condition comparison, and
-- a repeated V8 multi-family corpus evaluation using the real Icarus RTL runner.
+- Python 3.10, 3.11, and 3.12 unit tests and CLI smoke tests;
+- real Verilator assertion validation;
+- the V6 Icarus request/grant mutation proof;
+- the V7 four-condition comparison;
+- repeated V8 multi-family corpus evaluation with the real Icarus runner; and
+- V9 experiment-bundle creation and artifact-shape checks.
 
 CI does not use model API credentials.
 
@@ -159,9 +163,7 @@ Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.p
 
 ## CloudGuard AI V3
 
-CloudGuard remains a small Responsible-AI demonstration built around transparent weighted threat signals, heuristic evidence strength, top contributing reasons, named human decision/rationale capture, and a recommendation hash.
-
-Its decision API is an audit/demo mechanism rather than a production execution gate. The explanation is described as **SHAP-style additive attribution**, not fitted SHAP on a trained production model.
+CloudGuard remains a small Responsible-AI demonstration built around transparent weighted threat signals, heuristic evidence strength, top contributing reasons, named human decision/rationale capture, and a recommendation hash. Its decision API is an audit/demo mechanism rather than a production execution gate.
 
 Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
@@ -183,8 +185,8 @@ Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
 These are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
-## What V8 proves - and what it does not
+## What V9 proves - and what it does not
 
-V8 demonstrates in runnable code that the same four-condition evaluation protocol can operate across several temporal requirement families, execute multiple labelled RTL mutations, distinguish false positives from defect detection, preserve reviewer escalation as a separate outcome, and aggregate repeated trials with explicit evidence/model/prompt metadata.
+V9 demonstrates that repeated model/verification trials can be captured with model/prompt/evidence metadata, behavioral outcomes, false positives, escalation, latency, request counts, provider token usage when available, and reproducible machine-readable/human-readable experiment artifacts.
 
-V8 still does **not** prove that model-backed generation is superior to the deterministic baseline, general natural-language-to-SVA correctness, production EDA equivalence, or SoC-scale transfer. The scripted repeated trials are evaluation-plumbing evidence only. Defensible model-performance claims require a larger independently designed corpus, more mutations per family, repeated live-model trials, usage telemetry, fixed model/prompt configuration, and blinded expert review.
+V9 does **not** prove that model-backed generation is superior to the deterministic baseline, general natural-language-to-SVA correctness, production EDA equivalence, or SoC-scale transfer. Scripted runs remain plumbing evidence. Live runs are observations, not statistical conclusions. Defensible comparative claims still require a larger independently designed corpus, more mutations per family, a preregistered/frozen analysis plan, repeated live trials, and blinded expert review.

@@ -8,30 +8,31 @@
 
 ## Abstract
 
-Pre-silicon verification translates design intent into assertions, scenarios, coverage goals, and executable evidence. Large language models can accelerate drafting, but fluent generation can silently omit qualifiers, blur proposal and approval roles, or produce plausible but invalid properties. This working paper presents a role-separated verification-copilot architecture and V6 prototype combining: (1) a deterministic grammar/review baseline, (2) an optional model-backed generator role, (3) a separate adversarial reviewer role, (4) deterministic assertion validation including a real Verilator adapter, (5) labelled synthetic trace benchmarks, and (6) behavioral RTL mutation execution with Icarus Verilog. V6 executes a bounded request/grant requirement against an intended implementation and a deliberately late-grant mutation. The benchmark is considered successful only if the intended design passes and the mutation fails. This is the first repository milestone to establish runtime detection of a labelled RTL defect; it does not yet establish that model-backed generation improves verification effectiveness relative to deterministic or single-model baselines.
+Pre-silicon verification translates design intent into assertions, scenarios, coverage goals, and executable evidence. Large language models can accelerate drafting, but fluent generation can silently omit qualifiers, blur proposal and approval roles, or produce plausible but invalid properties. This working paper presents a role-separated verification-copilot architecture and V9 prototype combining: (1) a deterministic grammar/review baseline, (2) an optional model-backed generator role, (3) a separate adversarial reviewer role, (4) deterministic assertion validation including a real Verilator adapter, (5) behavioral execution with Icarus Verilog, (6) a three-family labelled RTL mutation corpus, (7) repeated four-condition workflow evaluation, and (8) reproducible experiment bundles with configuration identity, outcome identity, latency, and provider token usage when available. Scripted/offline trials validate the measurement and artifact pipeline; they are not empirical evidence of model superiority. The repository supports repeated live-model trials but does not run them in CI and does not yet establish that model-backed role separation improves verification outcomes.
 
-**Keywords:** pre-silicon verification, multi-agent systems, SystemVerilog Assertions, requirements traceability, mutation testing, independent review, large language models, tool-grounded AI
+**Keywords:** pre-silicon verification, multi-agent systems, SystemVerilog Assertions, requirements traceability, mutation testing, independent review, large language models, tool-grounded AI, reproducible experiments
 
 ## 1. Motivation
 
 Verification engineers must interpret specifications, resolve ambiguity, design scenarios, write checkers and assertions, define coverage, and investigate failures. An error in requirement interpretation can propagate into every downstream artifact. Generative models can accelerate drafting, but fluency is not evidence of correctness.
 
-The central hypothesis is that role separation plus deterministic verification-tool feedback can make AI-assisted verification more auditable. Proposal, requirement review, model review, tool validation, behavioral execution, and human acceptance should remain distinguishable stages rather than one opaque model response.
+The central hypothesis is that role separation plus deterministic verification-tool feedback can make AI-assisted verification more auditable. Proposal, requirement review, model review, tool validation, behavioral execution, human acceptance, and experiment reporting should remain distinguishable stages rather than one opaque model response.
 
 ## 2. Research questions
 
-1. Does role separation improve requirement recall and defect discovery compared with a single-model workflow?
+1. Does role separation improve requirement interpretation and defect discovery compared with a single-model workflow?
 2. Does adversarial review reduce syntactically invalid, semantically incorrect, or vacuous assertions?
 3. Does deterministic tool gating catch failures that model self-review misses?
 4. Does behavioral execution against seeded RTL mutations provide a useful ground-truth signal for evaluating generated properties?
-5. Which reviewer disagreements or abstentions predict genuine specification defects?
-6. Does orchestration improve total human review efficiency after model and tool cost are included?
+5. Which reviewer disagreements or abstentions predict genuine specification or artifact defects?
+6. Does orchestration improve total human review efficiency after latency and model/tool usage are considered?
+7. Can experiment provenance be captured well enough to support repeatable, auditable comparisons across model and prompt configurations?
 
-## 3. V6 architecture
+## 3. Current architecture
 
 ### 3.1 Deterministic baseline
 
-[`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) preserves the dependency-free baseline. It performs requirement-quality review, fail-safe complete-match grammar translation, pattern-specific scenario and coverage generation, provenance recording, and independent artifact review.
+[`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) preserves a dependency-free baseline. It performs requirement-quality review, fail-safe complete-match grammar translation, pattern-specific scenario and coverage generation, provenance recording, and independent artifact review.
 
 The baseline remains necessary because a model-backed workflow should be evaluated against a reproducible reference rather than only against another model configuration.
 
@@ -43,7 +44,7 @@ The baseline remains necessary because a model-backed workflow should be evaluat
 - `REVISE`, or
 - `ABSTAIN`.
 
-The implementation requires distinct generator and reviewer backend instances. This is workflow separation, not proof of statistical independence when both roles use the same model family.
+The implementation uses distinct generator and reviewer backend instances. This is workflow separation, not proof of statistical independence when both roles use the same model family.
 
 ### 3.3 Deterministic acceptance gate
 
@@ -51,139 +52,215 @@ A reviewer cannot directly mark a candidate accepted. Only `ACCEPT_FOR_TOOL_CHEC
 
 That state means the candidate may proceed to expert review. It is not design sign-off.
 
-## 4. Model backend implementation
+## 4. Model backend and usage telemetry
 
 The repository includes:
 
 - `ScriptedModelBackend` for deterministic CI and offline tests,
 - `OpenAIResponsesBackend` for optional live model calls.
 
-The CLI supports a live path with either structural or Verilator validation. API credentials are not stored in the repository and CI does not require model access.
+V9 records model request counts for all instrumented backends and input/output/total token counts when the provider returns usage telemetry. Scripted backends deliberately do not invent token counts.
+
+The CLI supports live model execution with either structural or Verilator validation. API credentials are not stored in the repository and CI does not require model access.
+
+Dollar cost is intentionally not inferred from token counts. Prices are external, model-specific, and time-dependent; historical usage should be joined to an explicitly dated pricing table if cost analysis is later required.
 
 ## 5. Evidence layers
 
-V6 deliberately separates four evidence claims.
+V9 deliberately separates six evidence claims.
 
-### 5.1 Model proposal
+### 5.1 Deterministic reference output
 
-A generated assertion is a candidate artifact only. It may be plausible but wrong.
+The deterministic grammar provides a reproducible baseline and explicit fallback behavior. A supported translation is still a draft artifact requiring design-context review.
 
-### 5.2 Structural validation
+### 5.2 Model proposal and review
 
-`StructuralSVAValidator` catches obvious malformed output such as missing `assert property`, missing semicolon, unbalanced parentheses, or fallback placeholders. It is not an SVA parser.
+A generated assertion is a candidate artifact only. Reviewer acceptance indicates that the candidate may proceed to a deterministic check; it does not establish semantic correctness.
 
-### 5.3 Concrete tool acceptance
+### 5.3 Structural validation
+
+`StructuralSVAValidator` catches obvious malformed output such as missing `assert property`, missing semicolon, unbalanced parentheses, or fallback placeholders. It is not a full SVA parser.
+
+### 5.4 Concrete tool acceptance
 
 `VerilatorSVAValidator` constructs a standalone SystemVerilog probe module and invokes an installed Verilator executable. A `VALID` result means that concrete tool/version accepted the assertion. It does not prove design-context correctness, non-vacuity, or requirement adequacy.
 
-### 5.4 Behavioral RTL execution
+### 5.5 Behavioral RTL execution
 
-V6 adds [`rtl_behavioral.py`](../src/assurance_portfolio/rtl_behavioral.py), which uses Icarus Verilog to compile and simulate RTL plus a generated temporal monitor. This layer asks whether the implementation behavior satisfies the bounded requirement at runtime.
+Icarus Verilog runners compile and execute known-good and mutated RTL against procedural temporal monitors derived from supported assertion families. A compile error or unavailable tool does not count as defect detection.
 
-## 6. Seeded benchmarks
+### 5.6 Reproducible experiment evidence
 
-### 6.1 Synthetic trace benchmark
+V9 writes a manifest, structured trials, aggregate summary, row-level CSV, aggregate CSV, and Markdown report. The experiment artifact preserves model/prompt/evidence metadata, code identity where available, behavioral outcomes, reviewer disposition, latency, request counts, and token usage when provided.
 
-[`verification_benchmark.py`](../src/assurance_portfolio/verification_benchmark.py) provides labelled traces for bounded response and prohibition requirements and reports accuracy, defect detection, and false positives. These traces remain useful regression baselines but are not RTL simulation evidence.
+## 6. Multi-family seeded RTL corpus
 
-### 6.2 Behavioral RTL mutation benchmark
+The current corpus contains three temporal requirement families.
 
-The RTL corpus currently contains two request/grant implementations:
+### 6.1 Bounded response — BR-001
 
-- [`handshake_good.sv`](../benchmarks/rtl/handshake_good.sv), intended to satisfy `grant shall assert within 4 cycles after request`.
-- [`handshake_late_bug.sv`](../benchmarks/rtl/handshake_late_bug.sv), a deliberately seeded mutation that delays grant beyond the bound.
-
-`IcarusBehavioralRunner` generates a SystemVerilog testbench, resets the DUT, pulses `request`, observes `grant`, and requires grant within four sampled cycles. The benchmark succeeds only if:
-
-1. the intended RTL passes,
-2. the late-grant mutation fails,
-3. mutation-detection rate is 1.0, and
-4. false-positive count is zero.
-
-Compilation failure or simulator unavailability is reported separately and does not count as mutation detection.
-
-The CLI entry point is:
+Requirement:
 
 ```text
-assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
+grant shall assert within 4 cycles after request
 ```
 
-GitHub Actions installs Icarus Verilog and runs the benchmark in a dedicated `rtl-behavioral-proof` job.
+Fixtures:
 
-## 7. Prototype evidence
+- [`handshake_good.sv`](../benchmarks/rtl/handshake_good.sv), intended to satisfy the requirement;
+- [`handshake_late_bug.sv`](../benchmarks/rtl/handshake_late_bug.sv), deliberately delays grant beyond the bound.
 
-When the V6 CI matrix passes, the repository establishes the following implementation facts:
+### 6.2 Prohibition — PR-001
 
-- generator and reviewer roles require separate backend instances,
-- model outputs are schema-checked,
-- reviewer revision/abstention prevents tool acceptance,
-- deterministic validator acceptance is required for a human-review candidate,
-- fallback placeholders fail structural validation,
-- a real Verilator adapter is exercised in CI,
-- deterministic synthetic monitors detect the labelled trace defects,
-- the intended handshake RTL satisfies the four-cycle behavioral monitor, and
-- the seeded late-grant RTL mutation violates that same monitor.
+Requirement:
 
-These are software and benchmark facts for the included fixtures. They do not prove superiority of the model-backed workflow.
+```text
+grant shall never assert while reset
+```
 
-## 8. Controlled evaluation design
+Fixtures:
 
-The next experiment should compare four conditions on the same mutation corpus:
+- `prohibition_good.sv`, expected to keep grant low while reset is active;
+- `prohibition_bug.sv`, contains a labelled violation.
 
-1. **Deterministic baseline** - complete-match grammar/reference-property workflow.
-2. **Single-model generation** - one model call produces the artifact without independent review.
-3. **Role-separated model workflow** - generator plus reviewer without deterministic behavioral gating.
-4. **Role-separated + tool-gated workflow** - generator plus reviewer plus syntax/behavioral verification feedback.
+### 6.3 Immediate implication — IM-001
 
-### Dataset
+Requirement:
 
-Expand the current corpus with compact public RTL blocks containing independently authored requirements, reference assertions, expected traces, seeded mutations, ambiguous/paraphrased requirement variants, reset cases, timing cases, concurrency, and error-handling behavior.
+```text
+if request is high, busy shall be high
+```
 
-### Metrics
+Fixtures:
 
-- requirement recall and precision,
-- assertion parse/elaboration success,
-- behavioral mutation detection,
-- false-positive rate,
-- vacuity rate where measurable,
-- reviewer escalation/abstention rate,
-- human review time,
-- model latency/token cost,
-- verification-tool execution cost.
+- `implication_good.sv`, expected to satisfy the same-cycle implication;
+- `implication_bug.sv`, contains a labelled violation.
 
-Repeated trials should vary model, prompt, seed, and orchestration configuration. Human reviewers should be blinded to workflow condition where practical.
+[`corpus_benchmark.py`](../src/assurance_portfolio/corpus_benchmark.py) maps supported candidate assertion families to the matching RTL pair and runs both the known-good and mutated design.
 
-## 9. Threats to validity
+## 7. Four-condition repeated evaluation
 
-Separate model calls may retain correlated blind spots. Syntax acceptance can admit semantically wrong assertions. One toy handshake mutation is not representative of SoC-scale verification. Seeded defects may be easier than organic design failures. Procedural behavioral monitors and specific simulator semantics may differ from commercial sign-off flows. Human-review effort can shift rather than decrease.
+[`corpus_evaluation.py`](../src/assurance_portfolio/corpus_evaluation.py) applies the same corpus to four workflow conditions:
 
-These limitations motivate a larger mutation corpus, independently authored reference properties, multiple simulators/formal engines, vacuity analysis, repeated trials, and blinded expert review.
+1. **Deterministic baseline** — deterministic grammar/reference output.
+2. **Single-model generation** — one model call proposes the artifact.
+3. **Generator + reviewer** — reviewer may accept, revise, or abstain; behavioral scoring is used for evaluation after acceptance.
+4. **Generator + reviewer + tool gate** — reviewer acceptance is followed by deterministic structural gating before behavioral evaluation.
 
-## 10. What V6 contributes
+Reviewer `REVISE` and `ABSTAIN` outcomes stop execution and are measured as escalation rather than being misclassified as assertion failures.
 
-The contribution is now a narrow but executable end-to-end assurance chain:
+The evaluator records:
 
-**requirement → deterministic baseline → optional model generator → independent reviewer → deterministic assertion validation → behavioral RTL benchmark → human-review evidence**
+- generation-failure rate,
+- reviewer escalation rate,
+- behavioral-execution rate,
+- full-correct rate: known-good RTL passes and the mutation is detected,
+- mutation-detection rate among executed cases,
+- false-positive rate on known-good RTL,
+- mean elapsed wall-clock time,
+- model request counts,
+- input/output/total token usage when available.
 
-V6 closes the specific gap left by V5: the repository no longer stops at standalone assertion acceptance. It now executes a temporal requirement against actual RTL and demonstrates detection of a labelled mutation when CI passes.
+A candidate that detects the mutation but falsely rejects the known-good design is not counted as fully correct.
 
-## 11. Limitations and next milestone
+## 8. Scripted and live experiment modes
 
-V6 still does not:
+### 8.1 Scripted/offline mode
 
-- execute arbitrary model-generated properties automatically against arbitrary RTL,
-- run formal proof or counterexample minimization,
-- measure vacuity on real designs,
-- use RAG over specifications,
-- integrate UVM regressions or commercial EDA tools,
-- compare live model conditions experimentally,
-- establish statistically meaningful productivity or defect-detection gains.
+The scripted corpus deliberately includes a too-strict bounded-response candidate and a reviewer escalation. This ensures the pipeline exercises false positives, reviewer withholding, aggregation, and artifact reporting rather than trivially returning all-green outcomes.
 
-The next milestone is therefore a **controlled comparative experiment over a larger mutation corpus**, not another orchestration layer.
+These results validate software behavior and measurement plumbing only. They are not evidence that a model or orchestration strategy is better than another.
 
-## 12. Conclusion
+### 8.2 Live-model mode
 
-A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose uncertainty, separate proposal from review, ground acceptance in executable tools, and retain human authority. V6 adds behavioral mutation proof to that chain. The remaining question is empirical: whether role-separated model assistance improves real verification outcomes enough to justify its complexity and cost.
+The same evaluator can perform repeated live calls through the optional OpenAI backend. Live runs record `evidence_kind=live_model`, the configured model label, prompt version, request counts, and provider token usage when available.
+
+Live-model trials are not run in repository CI. The existence of a live path does not imply that statistically meaningful live experiments have already been completed.
+
+## 9. Experiment artifact protocol
+
+[`experiment_artifacts.py`](../src/assurance_portfolio/experiment_artifacts.py) writes one experiment bundle containing:
+
+- `manifest.json`,
+- `trials.json`,
+- `summary.json`,
+- `results.csv`,
+- `aggregates.csv`,
+- `REPORT.md`.
+
+V9 uses two identifiers:
+
+- **experiment ID** — deterministic hash of the recorded configuration and code identity;
+- **run ID** — deterministic hash of the experiment ID plus outcome-bearing trial fields.
+
+This lets stochastic reruns share a configuration identity without overwriting different observed outcomes. Wall-clock latency and free-form notes are retained in the artifact but excluded from the run fingerprint.
+
+The report explicitly states the interpretation boundary and leaves dollar cost unset unless a separate dated pricing policy is supplied.
+
+## 10. Current implementation evidence
+
+When the current CI matrix passes, the repository establishes the following implementation facts:
+
+- deterministic requirement-to-artifact generation and fallback behavior remain regression-tested;
+- generator and reviewer roles are separate workflow stages;
+- model JSON outputs are schema-checked;
+- reviewer revision/abstention prevents execution;
+- a real Verilator adapter is exercised in CI;
+- the request/grant mutation benchmark executes in Icarus Verilog;
+- the four-condition V7 comparison executes against RTL;
+- the three-family V8 corpus executes repeatedly against known-good and mutated RTL;
+- V9 writes and validates the expected experiment bundle files;
+- scripted runs record model request counts without fabricating token counts.
+
+These are implementation and benchmark facts. They do not establish superiority of the model-backed workflow.
+
+## 11. Threats to validity
+
+Separate model calls may retain correlated blind spots. Structural or syntax acceptance can admit semantically wrong assertions. The current corpus has only three simple requirement families and one mutation per family. Seeded defects may be easier than organic design failures. Procedural monitors and open-source simulator semantics may differ from commercial sign-off flows. Repeated trials on a small corpus can give misleadingly stable aggregate rates. Human-review effort is not yet measured. The corpus and reference behavior were developed alongside the prototype, which creates benchmark-design bias.
+
+These limitations motivate independently authored requirements and reference properties, multiple mutations per family, larger public RTL blocks, preregistered analysis, frozen model/prompt configurations, repeated live trials, additional simulator/formal checks, and blinded expert review.
+
+## 12. Next controlled study
+
+The next research milestone should be empirical rather than architectural.
+
+A stronger study should:
+
+1. freeze the model, prompt version, corpus revision, and analysis code before running the primary experiment;
+2. use an independently authored or externally reviewed corpus with more mutations and requirement variants;
+3. run enough repeated live trials to characterize variance rather than rely on one observation;
+4. preserve raw model/tool outputs and V9 experiment manifests;
+5. have expert reviewers score semantic correctness and review effort without seeing workflow condition where practical;
+6. report confidence intervals or other uncertainty measures appropriate to the sample size;
+7. keep exploratory results clearly separate from preregistered primary analyses.
+
+The central empirical question is whether the added reviewer and tool-gating stages improve full-correct outcomes enough to justify their latency, token usage, and human-review cost.
+
+## 13. What V9 contributes
+
+The contribution is now an executable and auditable research skeleton:
+
+**requirement → deterministic baseline → optional model generator → independent reviewer → deterministic validation → behavioral RTL evaluation → repeated comparison → reproducible experiment bundle → human review**
+
+V9 does not resolve the research question. It makes the next experiment measurable and traceable enough that a positive or negative result can be inspected rather than inferred from a demo.
+
+## 14. Limitations
+
+V9 still does not:
+
+- establish general natural-language-to-SVA correctness;
+- run formal proof or counterexample minimization;
+- measure vacuity systematically;
+- use RAG over production specifications;
+- integrate UVM regressions or commercial EDA tools;
+- provide an independently designed large benchmark;
+- report blinded expert-review data;
+- report statistically meaningful live-model performance gains;
+- estimate historical dollar cost without an explicitly dated pricing policy.
+
+## 15. Conclusion
+
+A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose uncertainty, separate proposal from review, ground acceptance in executable tools, distinguish defect detection from false positives, and preserve enough experiment provenance to support scrutiny. V9 implements that research skeleton across three temporal requirement families and repeated workflow comparisons. The remaining question is empirical: whether role-separated model assistance materially improves verification outcomes on a larger, independently evaluated corpus after latency, token usage, and human review effort are accounted for.
 
 ## References
 
