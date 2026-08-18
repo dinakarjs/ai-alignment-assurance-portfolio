@@ -1,16 +1,26 @@
 {
-  "update_id": "CU-001",
-  "from_version": "agent-trace-checks/4.0.0",
-  "to_version": "agent-trace-checks/5.0.0",
+  "update_id": "CU-002",
+  "from_version": "agent-trace-checks/5.0.0",
+  "to_version": "agent-trace-checks/6.0.0",
   "change_type": "POLICY_STRENGTHENING",
-  "rationale": "Prepare authorization checks for parameter-bound approval and field-issue feedback.",
-  "source_issue": "portfolio-v5-audit-trail",
+  "rationale": "Add runtime gating, artifact-bound attestations, anti-rollback, replay, canaries, and schema/policy provenance.",
+  "source_issue": "portfolio-v6-result-integrity",
   "checks_modified": [
-    "authorization_before_sensitive_action"
+    "authorization_before_sensitive_action",
+    "evidence_before_high_risk_action",
+    "independent_approval"
   ],
-  "schema_updates": [],
+  "schema_updates": [
+    "agent-trace/2.0.0 adds causal, delegation, trust-domain, parameter, and provenance fields"
+  ],
   "policy_updates": [
-    "record check-version provenance for every audited evaluation"
+    "require parameter-bound capabilities",
+    "require verified evidence for high-risk actions",
+    "require anti-rollback and result-integrity evidence"
+  ],
+  "regression_evidence": [
+    "tests/test_trace_v6.py",
+    "assurance-trace-audit self-test"
   ],
   "proposer": "verification-engineer",
   "approver": "governance-reviewer",
