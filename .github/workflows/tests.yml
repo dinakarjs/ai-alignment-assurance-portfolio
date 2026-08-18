@@ -28,3 +28,28 @@ jobs:
           assurance-demo cloudguard examples/cloudguard_incident.json
           assurance-demo trace examples/agent_trace.json
           assurance-demo copilot examples/requirements.json
+          assurance-demo benchmark
+
+  verilator-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package and Verilator
+        run: |
+          python -m pip install -e .
+          sudo apt-get update
+          sudo apt-get install -y verilator
+      - name: Validate assertion with Verilator
+        run: |
+          python - <<'PY'
+          from assurance_portfolio.sva_validation import VerilatorSVAValidator, ValidationStatus
+          result = VerilatorSVAValidator().validate(
+              "assert property (@(posedge clk) reset |-> !grant);"
+          )
+          print(result)
+          if result.status is not ValidationStatus.VALID:
+              raise SystemExit(1)
+          PY
