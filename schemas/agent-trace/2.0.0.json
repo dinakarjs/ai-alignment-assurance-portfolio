@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/agent-trace/2.0.0",
+  "title": "Agent Trace Event v2",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "agent-trace/2.0.0"},
+    "event_id": {"type": "string", "minLength": 1},
+    "parent_event_id": {"type": ["string", "null"]},
+    "trace_id": {"type": ["string", "null"]},
+    "span_id": {"type": ["string", "null"]},
+    "parent_span_id": {"type": ["string", "null"]},
+    "type": {"type": "string", "minLength": 1},
+    "timestamp": {"type": ["string", "null"]},
+    "agent_id": {"type": ["string", "null"]},
+    "principal_id": {"type": ["string", "null"]},
+    "delegated_by": {"type": ["string", "null"]},
+    "trust_domain": {"type": ["string", "null"]},
+    "transaction_id": {"type": ["string", "null"]},
+    "action_id": {"type": ["string", "null"]},
+    "action": {"type": ["string", "null"]},
+    "parameters": {"type": "object"},
+    "capability_id": {"type": ["string", "null"]},
+    "parent_capability_id": {"type": ["string", "null"]},
+    "constraints": {"type": "object"},
+    "delegation_depth": {"type": ["integer", "null"], "minimum": 0},
+    "sensitive": {"type": "boolean"},
+    "high_risk": {"type": "boolean"},
+    "proposer": {"type": ["string", "null"]},
+    "approver": {"type": ["string", "null"]},
+    "proposer_trust_domain": {"type": ["string", "null"]},
+    "approver_trust_domain": {"type": ["string", "null"]},
+    "source": {"type": ["string", "null"]},
+    "trust_label": {
+      "type": ["string", "null"],
+      "enum": [
+        "TRUSTED_CONTROL",
+        "TRUSTED_DATA",
+        "UNTRUSTED_USER_DATA",
+        "UNTRUSTED_TOOL_DATA",
+        "EXTERNAL_CONTENT",
+        "MODEL_GENERATED",
+        "VERIFIED_EVIDENCE",
+        null
+      ]
+    },
+    "content_digest": {"type": ["string", "null"]},
+    "expires_after_events": {"type": ["integer", "null"], "minimum": 0}
+  },
+  "additionalProperties": true
+}

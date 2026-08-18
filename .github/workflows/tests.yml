@@ -29,25 +29,48 @@ jobs:
           assurance-demo trace examples/agent_trace.json
           assurance-demo copilot examples/requirements.json
           assurance-demo benchmark
-      - name: Exercise Agent Trace Assurance audit trail
+      - name: Exercise Agent Trace Assurance V6 controls
         run: |
+          assurance-runtime examples/runtime_assurance_request.json
+          assurance-integrity evaluation examples/evaluation_integrity_clean.json
+          assurance-integrity cicd examples/cicd_integrity_clean.json
+          assurance-integrity attribution --baseline 0.50 --full 0.85 --isolated 0.55
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl check-update examples/check_update.json
-          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl evaluate examples/agent_trace.json --check-version agent-trace-checks/5.0.0
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl evaluate examples/agent_trace.json \
+            --check-version agent-trace-checks/6.1.0 \
+            --minimum-check-version agent-trace-checks/6.0.0 \
+            --check-manifest-file checks/agent-trace-checks/6.1.0.json \
+            --schema-version agent-trace/2.0.0 \
+            --schema-file schemas/agent-trace/2.0.0.json \
+            --policy-version agent-trace-policy/2.0.0 \
+            --policy-file policies/agent-trace-policy/2.0.0.json
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl anchor --external-reference ci-local-anchor
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl verify
-          test "$(wc -l < /tmp/trace-audit.jsonl)" -eq 2
+          assurance-trace-audit self-test
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl field-issue examples/field_issue.json
+          test "$(wc -l < /tmp/trace-audit.jsonl)" -eq 4
 
   verilator-validation:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install package and Verilator
+      - name: Install Python package
+        run: python -m pip install -e .
+      - name: Install Verilator
+        timeout-minutes: 5
         run: |
-          python -m pip install -e .
-          sudo apt-get update
-          sudo apt-get install -y verilator
+          if ! command -v verilator >/dev/null 2>&1; then
+            sudo apt-get update \
+              -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30
+            sudo apt-get install -y --no-install-recommends verilator
+          fi
+          verilator --version
       - name: Validate assertion with Verilator
         run: |
           python - <<'PY'
@@ -62,16 +85,25 @@ jobs:
 
   rtl-behavioral-proof:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install package and Icarus Verilog
+      - name: Install Python package
+        run: python -m pip install -e .
+      - name: Install Icarus Verilog
+        timeout-minutes: 5
         run: |
-          python -m pip install -e .
-          sudo apt-get update
-          sudo apt-get install -y iverilog
+          if ! command -v iverilog >/dev/null 2>&1; then
+            sudo apt-get update \
+              -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30
+            sudo apt-get install -y --no-install-recommends iverilog
+          fi
+          iverilog -V
       - name: Prove seeded RTL mutation is detected
         run: assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
       - name: Exercise V7 four-condition comparison

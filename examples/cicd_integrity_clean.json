@@ -1,0 +1,16 @@
+{
+  "workflow_name": "agent-review",
+  "trigger": "pull_request",
+  "trigger_trust": "UNTRUSTED",
+  "source_ref": "refs/pull/7/head",
+  "trusted_control_ref": "refs/heads/main",
+  "actor": "external-user",
+  "agent_principal": "coding-agent",
+  "requested_action": "analyze",
+  "requested_permissions": ["contents:read"],
+  "runner_permissions": ["contents:read"],
+  "secret_names": [],
+  "modifies_workflow": false,
+  "modifies_policy": false,
+  "production_effect": false
+}

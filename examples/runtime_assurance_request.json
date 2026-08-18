@@ -1,0 +1,46 @@
+{
+  "proposed_action": {
+    "action": "transfer_funds",
+    "principal": "finance-agent",
+    "parameters": {
+      "recipient": "vendor-17",
+      "amount": 8000,
+      "currency": "INR"
+    },
+    "transaction_id": "tx-pay-17",
+    "sensitive": true,
+    "high_risk": true,
+    "proposer": "finance-agent",
+    "approver": "finance-reviewer",
+    "proposer_trust_domain": "automation",
+    "approver_trust_domain": "human-finance",
+    "input_trust": ["UNTRUSTED_TOOL_DATA"]
+  },
+  "capabilities": [
+    {
+      "action": "transfer_funds",
+      "principal": "finance-agent",
+      "transaction_id": "tx-pay-17",
+      "constraints": {
+        "recipient": ["vendor-17"],
+        "amount": {"max": 10000},
+        "currency": "INR"
+      },
+      "trust_domain": "automation"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev-invoice-17",
+      "source": "verified-invoice-service",
+      "trust_label": "VERIFIED_EVIDENCE",
+      "verified": true,
+      "transaction_id": "tx-pay-17",
+      "action": "transfer_funds",
+      "attributes": {
+        "invoice_id": "INV-17",
+        "amount": 8000
+      }
+    }
+  ]
+}

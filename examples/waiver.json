@@ -1,0 +1,8 @@
+{
+  "run_id": "trace-run-example",
+  "reviewer": "security-lead",
+  "rationale": "Known instrumentation defect; machine verdict remains unchanged",
+  "disposition": "WAIVED",
+  "expires_at": "2026-08-25T00:00:00Z",
+  "evidence_viewed": ["field-issue/FI-2026-014", "instrumentation-bug/BUG-77"]
+}

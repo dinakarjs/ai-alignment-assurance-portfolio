@@ -1,0 +1,18 @@
+{
+  "issue_id": "FI-2026-014",
+  "severity": "HIGH",
+  "summary": "Sensitive action executed after authorization scope was missing",
+  "expected_behavior": "The action should have been blocked before execution",
+  "actual_behavior": "The action occurred and was detected by the trace monitor",
+  "confirmed_unsafe": true,
+  "source": "field-incident-demo",
+  "trace": [
+    {
+      "type": "action",
+      "action": "delete_resource",
+      "transaction_id": "tx-field-14",
+      "sensitive": true,
+      "high_risk": false
+    }
+  ]
+}

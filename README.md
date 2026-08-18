@@ -1,12 +1,15 @@
-# AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
+# AI Assurance & Agentic Verification Portfolio — Runnable Prototypes
 
-This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. It deliberately separates deterministic baselines, model-backed proposal/review, tool acceptance, behavioral RTL evidence, comparative evaluation, and experiment reporting.
+This repository applies semiconductor-verification discipline to AI assurance and applies AI/agent workflows back to pre-silicon verification engineering. It deliberately separates proposal, enforcement, deterministic checking, behavioral evidence, human oversight, evaluation integrity, execution-environment integrity, and evidence integrity.
 
-1. **Verification Copilot V9** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic validation, multi-family RTL mutation benchmarks, repeated-trial comparison, model usage telemetry, and reproducible experiment bundles.
-2. **Agent Trace Assurance Engine V4** - scoped/consumable/expiring authorization and evidence, high-risk classification checks, independent approval, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
-3. **CloudGuard AI V3** - transparent threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
+The two primary technical pillars are:
 
-These remain research prototypes rather than production EDA, security, alignment, or autonomous sign-off systems.
+1. **Verification Copilot V9** — deterministic and model-backed requirement-to-verification workflows, tool validation, behavioral RTL mutation testing, controlled comparison, repeated trials, usage telemetry, and reproducible experiment bundles.
+2. **Agent Trace Assurance V6.1** — deterministic trace properties, pre-action capability/evidence gating, versioned schemas/policies/checks, causal/delegation validation, evaluation-leakage protection, privileged CI/CD controls, field-issue feedback, result attestations, anti-rollback, immutable waivers, assurance canaries, and auditable check evolution.
+
+A smaller **CloudGuard AI V3** Responsible-AI demonstration remains as supporting coursework/research material.
+
+These are research prototypes. They are not production EDA sign-off, production IAM/security enforcement, alignment guarantees, or regulatory compliance claims.
 
 ## Quick start
 
@@ -16,93 +19,182 @@ Python 3.10 or newer is required.
 python -m pip install -e .
 assurance-demo copilot examples/requirements.json
 assurance-demo trace examples/agent_trace.json
+assurance-runtime examples/runtime_assurance_request.json
+assurance-integrity evaluation examples/evaluation_integrity_clean.json
+assurance-integrity cicd examples/cicd_integrity_clean.json
 assurance-demo cloudguard examples/cloudguard_incident.json
-assurance-demo benchmark
 ```
 
-With Icarus Verilog installed:
+Run the full test suite:
 
 ```bash
-assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
-assurance-demo controlled-eval --rtl-root benchmarks/rtl
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+---
+
+# Agent Trace Assurance V6.1
+
+## Design principle: the model is not the security boundary
+
+V6.1 treats an LLM/agent as an **untrusted planner**. Deterministic infrastructure decides whether an effectful operation may proceed, whether an experiment is contaminated, whether a privileged CI/CD environment is being misused, and whether the resulting assurance record is trustworthy.
+
+The architecture now separates four integrity boundaries:
+
+1. **Action integrity** — is the AI authorized to perform the proposed effect?
+2. **Evaluation integrity** — was performance measured without answer/scoring leakage or evaluator conflict?
+3. **Result integrity** — were required checks, versions, artifacts, and reported results authentic and complete?
+4. **Execution-environment integrity** — can untrusted AI/input exploit CI/CD identity, secrets, or production authority?
+
+A system may pass one boundary while failing another; a bare aggregate `PASS` is therefore insufficient assurance evidence.
+
+## Runtime gateway
+
+[`runtime_assurance.py`](src/assurance_portfolio/runtime_assurance.py) implements a pre-action reference gate. Sensitive/high-risk actions require a capability bound to the action, principal, transaction, and security-relevant parameters. High-risk actions additionally require verified transaction-bound evidence and named oversight. Self-approval is blocked; same-trust-domain approval escalates.
+
+Untrusted tool/external content may influence reasoning but cannot create authority merely by appearing in context.
+
+```bash
+assurance-runtime examples/runtime_assurance_request.json
+```
+
+This remains a reference gate, not yet a production OS/cloud/tool-broker interceptor.
+
+## Evaluation Collusion & Leakage Protection
+
+[`evaluation_integrity.py`](src/assurance_portfolio/evaluation_integrity.py) addresses contaminated evaluation pipelines where a model/module receives answer keys, ground truth, scoring signals, evaluator feedback, or equivalent privileged information.
+
+Artifacts carry producers, parent relationships, labels, optional digests, and access records. Restricted labels propagate transitively through artifact ancestry. The implemented labels include:
+
+- `MODEL_INPUT`
+- `MODEL_DERIVED`
+- `GROUND_TRUTH`
+- `ANSWER_KEY`
+- `EVALUATOR_ONLY`
+- `SCORING_SIGNAL`
+- `POST_COMMIT_FEEDBACK`
+- `EVALUATION_CANARY`
+
+A valid evaluation requires the prediction to be committed before ground truth is released, prohibits privileged evaluation data from becoming an ancestor of the prediction, prevents pre-commit scoring feedback from reaching the system under test, and requires scorer identity outside the system-under-test principal set.
+
+```bash
+assurance-integrity evaluation examples/evaluation_integrity_clean.json
+```
+
+Attribution can also be measured under privileged-channel isolation:
+
+```bash
+assurance-integrity attribution --baseline 0.50 --full 0.85 --isolated 0.55
+```
+
+The reported privileged-channel-dependent gain is descriptive evidence, not an automatic cheating/collusion verdict.
+
+## CI/CD & Privileged Execution Integrity
+
+[`cicd_integrity.py`](src/assurance_portfolio/cicd_integrity.py) addresses AI agents running inside potentially privileged CI/CD jobs. The key invariant is:
+
+`agent capability != runner capability != production promotion capability`
+
+The reference validator checks untrusted triggers against privileged runners, trusted-control refs, self-modification of workflow/policy guardrails, secret exposure, permission escalation, independent production approval, and reviewed-artifact digest matching.
+
+```bash
+assurance-integrity cicd examples/cicd_integrity_clean.json
+```
+
+A read-only sandbox may accept untrusted PR content. A secret-bearing/write-capable runner is a different trust domain and requires stronger controls.
+
+## V4 deterministic monitor retained for compatibility
+
+[`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py) remains the compact deterministic monitor for authorization, evidence, high-risk classification, independent approval, and shutdown compliance. Base results remain `PASS`, `FAIL`, or `INCONCLUSIVE` with property-exercise coverage semantics.
+
+## Versioned artifacts and immutable evolution
+
+Concrete governance artifacts include:
+
+- [`schemas/agent-trace/2.0.0.json`](schemas/agent-trace/2.0.0.json)
+- [`policies/agent-trace-policy/2.0.0.json`](policies/agent-trace-policy/2.0.0.json)
+- [`checks/agent-trace-checks/6.0.0.json`](checks/agent-trace-checks/6.0.0.json)
+- [`checks/agent-trace-checks/6.1.0.json`](checks/agent-trace-checks/6.1.0.json)
+
+The 6.0.0 manifest remains unchanged. New evaluation- and CI/CD-integrity controls are introduced in 6.1.0 rather than silently rewriting an older version.
+
+[`schema_registry.py`](src/assurance_portfolio/schema_registry.py) supports immutable proposals, actual JSON-Schema Draft 2020-12 instance validation, compatibility classification, and independently approved activation.
+
+## Causal/delegation protection
+
+[`causal_trace.py`](src/assurance_portfolio/causal_trace.py) checks event parentage and delegation ancestry. It rejects missing parents, duplicate IDs, unknown parent capabilities, action changes during delegation, and simple privilege amplification where a child capability broadens its parent's scope.
+
+## Protecting check results from being fudged
+
+A V6.1 audited evaluation distinguishes:
+
+1. **base monitor result** — V4 property verdict;
+2. **system result** — additionally fails schema or causal/delegation invalidity;
+3. **attestation integrity** — `VERIFIED`, `UNVERIFIED`, or `INVALID`.
+
+[`result_integrity.py`](src/assurance_portfolio/result_integrity.py) binds a result to the trace, raw result, checker source, check manifest, schema, policy, configuration, runtime environment, optional Git commit, required/executed checks, and minimum/current check versions.
+
+Omitted required checks or rollback below the minimum version are `INVALID`. Deterministic replay disagreement and invalid structure also invalidate assurance evidence. Optional Ed25519 signatures are supported; `VERIFIED` additionally requires concrete artifact binding.
+
+```bash
+assurance-trace-audit --audit-log artifacts/trace-audit/audit.jsonl \
+  evaluate examples/agent_trace.json \
+  --check-version agent-trace-checks/6.1.0 \
+  --minimum-check-version agent-trace-checks/6.0.0 \
+  --check-manifest-file checks/agent-trace-checks/6.1.0.json \
+  --schema-version agent-trace/2.0.0 \
+  --schema-file schemas/agent-trace/2.0.0.json \
+  --policy-version agent-trace-policy/2.0.0 \
+  --policy-file policies/agent-trace-policy/2.0.0.json
+```
+
+Unsigned but artifact-bound evidence remains `UNVERIFIED`, not falsely labelled verified.
+
+## Immutable human dispositions, canaries, and audit anchors
+
+A reviewer cannot rewrite a machine `FAIL` as `PASS`; review is appended as a separate disposition. `assurance_selftest.py` injects known assurance failures, and `TraceAuditStore` uses canonical hash-linked JSONL records plus optional Merkle checkpoints.
+
+The local chain is tamper-evident, not tamper-proof. Production use should anchor roots in a separate trust domain such as WORM/object-lock storage or an independent transparency/audit service.
+
+## Field-issue feedback and check evolution
+
+[`field_issue.py`](src/assurance_portfolio/field_issue.py) replays incidents and classifies false negative, coverage gap, enforcement gap, false positive, or weak-check/review-needed outcomes. Approved changes require independent review; security-sensitive weakening/removal requires an additional independent approver.
+
+Detailed protocol: [`benchmarks/TRACE_ASSURANCE_V6.md`](benchmarks/TRACE_ASSURANCE_V6.md)  
+Architecture/research note: [`projects/alignment-assurance-lab.md`](projects/alignment-assurance-lab.md)  
+Working paper: [`papers/alignment-assurance-lab-working-paper.md`](papers/alignment-assurance-lab-working-paper.md)  
+V6.1 integrity addendum: [`papers/alignment-assurance-v6-integrity-addendum.md`](papers/alignment-assurance-v6-integrity-addendum.md)
+
+---
+
+# Verification Copilot V9
+
+## Deterministic and model-backed roles
+
+[`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) provides a conservative complete-match deterministic requirement baseline with reviewable SVA-style drafts, scenarios, coverage goals, and explicit fallback.
+
+[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds separate model-backed generator and adversarial reviewer roles. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. Reviewer acceptance is not sign-off; deterministic validation and human review remain distinct.
+
+The optional OpenAI Responses backend records request/token telemetry when the provider exposes it. Scripted backends support credential-free deterministic CI.
+
+## Tool and behavioral evidence
+
+[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) includes structural and Verilator-backed validation.
+
+Behavioral milestones include:
+
+- **V6** — Icarus execution against known-good request/grant RTL and a seeded late-grant mutation;
+- **V7** — four-condition deterministic / single-model / generator-reviewer / generator-reviewer-tool comparison;
+- **V8** — three temporal families with good/mutated RTL and repeated trials;
+- **V9** — model usage telemetry and reproducible JSON/CSV/Markdown experiment bundles.
+
+Run the offline corpus:
+
+```bash
 assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 3
 ```
 
-## Model-backed path
-
-Install the optional agentic dependency and configure the OpenAI SDK normally:
-
-```bash
-python -m pip install -e ".[agentic]"
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="..."
-assurance-demo agentic examples/requirements.json --validator structural
-```
-
-If Verilator is installed:
-
-```bash
-assurance-demo agentic examples/requirements.json --validator verilator
-```
-
-The workflow performs separate generator and reviewer model calls. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft reaches `accepted_for_human_review=true` only when the reviewer sends it forward and the configured deterministic validator returns `VALID`. This remains a human-review gate, not design sign-off.
-
-## Verification Copilot V9
-
-### Deterministic baseline
-
-[`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, performs requirement-quality review, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios and coverage goals, and independently reviews generated artifacts. Unsupported trailing semantics force fallback rather than being silently discarded.
-
-### Model-backed roles and usage telemetry
-
-[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds separate generator and adversarial reviewer roles behind a minimal backend interface. `OpenAIResponsesBackend` performs live calls; `ScriptedModelBackend` provides deterministic offline/CI testing.
-
-V9 additionally records cumulative request and token usage when a backend provides it. The OpenAI Responses backend captures input, output, and total token counts from the API response. Scripted backends record request counts but explicitly leave token telemetry unavailable.
-
-Separate model calls do not guarantee statistical independence when both roles use the same model family.
-
-### Deterministic validation
-
-[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides a shallow structural validator and a concrete Verilator-backed assertion/lint adapter. Tool acceptance is recorded separately from semantic correctness against RTL.
-
-## Behavioral evidence layers
-
-### V6 request/grant mutation proof
-
-[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) executes the request/grant bounded-response requirement against a known-good implementation and a deliberately late-grant mutation. Compile/tool failures do not count as mutation detection.
-
-### V7 four-condition comparison
-
-[`controlled_evaluation.py`](src/assurance_portfolio/controlled_evaluation.py) compares:
-
-1. deterministic,
-2. single model,
-3. generator + reviewer,
-4. generator + reviewer + tool gate.
-
-The evaluator distinguishes mutation detection from false-positive behavior and records reviewer escalation separately from execution.
-
-### V8 multi-family benchmark corpus
-
-V8 broadened the behavioral corpus to three temporal requirement families, each with known-good and mutated RTL:
-
-| Case | Family | Requirement |
-|---|---|---|
-| BR-001 | bounded response | `grant shall assert within 4 cycles after request` |
-| PR-001 | prohibition | `grant shall never assert while reset` |
-| IM-001 | immediate implication | `if request is high, busy shall be high` |
-
-[`corpus_benchmark.py`](src/assurance_portfolio/corpus_benchmark.py) parses supported candidate assertion families and executes each candidate against the matching good/mutated RTL pair with Icarus Verilog.
-
-[`corpus_evaluation.py`](src/assurance_portfolio/corpus_evaluation.py) applies the four workflow conditions across the corpus and aggregates repeated trials. Metrics include generation failure, reviewer escalation, behavioral execution, full-correct rate, mutation detection, false positives, elapsed time, model requests, and token usage when available.
-
-A candidate that detects a mutation but falsely rejects known-good RTL is **not** counted as fully correct.
-
-## V9 reproducible experiment artifacts
-
-V9 converts repeated corpus runs into reusable evidence bundles rather than console-only output.
-
-A scripted/offline run can opt in:
+For experiment bundles:
 
 ```bash
 assurance-demo corpus-eval \
@@ -111,61 +203,37 @@ assurance-demo corpus-eval \
   --output-root artifacts/experiments
 ```
 
-A live-model run writes an experiment bundle by default:
-
-```bash
-python -m pip install -e ".[agentic]"
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="..."
-assurance-demo corpus-eval-live \
-  --rtl-root benchmarks/rtl \
-  --trials 3 \
-  --output-root artifacts/experiments
-```
-
-Each run directory contains:
-
-- `manifest.json` - experiment ID, run ID, evidence/model/prompt configuration, git SHA where available, invocation and environment;
-- `trials.json` - complete structured trial output;
-- `summary.json` - aggregate metrics;
-- `results.csv` - row-level case/workflow observations;
-- `aggregates.csv` - per-condition summary metrics;
-- `REPORT.md` - a compact human-readable report with an explicit interpretation boundary.
-
-The **experiment ID** hashes the recorded configuration and code identity. The **run ID** hashes the experiment ID plus outcome-bearing trial fields, so stochastic reruns can share the same experiment configuration without overwriting different observed results. Dollar cost is deliberately left unset because pricing is model- and date-dependent; historical token counts should be joined to an explicitly dated pricing table rather than silently repriced.
-
 See [`benchmarks/V8_CORPUS.md`](benchmarks/V8_CORPUS.md) and [`benchmarks/V9_EXPERIMENT_ARTIFACTS.md`](benchmarks/V9_EXPERIMENT_ARTIFACTS.md).
 
-## CI
+---
 
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
+# CI
 
 GitHub Actions runs:
 
-- Python 3.10, 3.11, and 3.12 unit tests and CLI smoke tests;
+- Python 3.10 / 3.11 / 3.12 unit tests;
+- Agent Trace Assurance runtime, evaluation-integrity, CI/CD-integrity, artifact-bound audit, Merkle-chain, canary, and field-issue exercises;
 - real Verilator assertion validation;
-- the V6 Icarus request/grant mutation proof;
-- the V7 four-condition comparison;
-- repeated V8 multi-family corpus evaluation with the real Icarus runner; and
-- V9 experiment-bundle creation and artifact-shape checks.
+- V6 RTL behavioral mutation proof;
+- V7 controlled comparison;
+- V8 repeated multi-family Icarus corpus;
+- V9 experiment-bundle checks.
 
-CI does not use model API credentials.
+EDA-tool installation is isolated from Python installation, uses retries/network timeouts, and has explicit step/job time limits so an external Ubuntu mirror stall cannot masquerade as a hung assurance test.
 
-## Agent Trace Assurance V4
+CI remains credential-free for model APIs and does not use a production signing key; signature behavior is covered with ephemeral-key unit tests.
 
-Agent Trace Assurance treats each execution as an ordered event trace and evaluates explicit safety properties at relevant steps. It includes scoped and single-use grants, optional event-count expiry, strict scope matching, high-risk classification checks, required proposer/approver identities, shutdown compliance, and PASS/FAIL/INCONCLUSIVE results.
+---
 
-Current coverage is **property-exercise coverage**, not full functional/assertion/vacuity coverage. Authorization/evidence events are still assumed trustworthy observations; actor authority, evidence provenance/quality, and trace integrity remain future work.
+# Research positioning and claim boundary
 
-Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py)
+Trace monitoring and runtime guardrails for tool-using agents are active research areas. This repository does **not** claim that trace-based assurance itself is wholly novel. The stronger research direction is the verification-style operational loop combined with independent integrity boundaries:
 
-## CloudGuard AI V3
+**field issue → historical replay → assurance gap → versioned check/schema/policy change → independent approval → regression/adversarial closure → attested audit evidence.**
 
-CloudGuard remains a small Responsible-AI demonstration built around transparent weighted threat signals, heuristic evidence strength, top contributing reasons, named human decision/rationale capture, and a recommendation hash. Its decision API is an audit/demo mechanism rather than a production execution gate.
+Agent Trace Assurance V6.1 does not prove complete prompt-injection resistance, complete hallucination detection, trustworthy instrumentation, production CI/IAM isolation, universal multi-agent correctness, trusted hardware execution, or empirical safety improvement across real agent frameworks. Verification Copilot V9 does not prove model superiority, general natural-language-to-SVA correctness, production EDA equivalence, or SoC-scale transfer.
 
-Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
+Those claims require larger independently designed benchmarks, real integrations, repeated trials, and expert review.
 
 ## Research portfolio
 
@@ -175,18 +243,13 @@ Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 - [Responsible AI and DBA Research Agenda](projects/responsible-ai-dba-research.md)
 - [CloudGuard AI](projects/cloudguard-ai.md)
 
-## Papers and research artifacts
+## Papers and artifacts
 
 - [Artifact catalog](papers/README.md)
 - [Multi-Agent Verification Copilot working paper](papers/multi-agent-verification-copilot-working-paper.md)
 - [Alignment Assurance Lab working paper](papers/alignment-assurance-lab-working-paper.md)
-- [CloudGuard AI course report - repository edition](papers/cloudguard-ai-course-report.md)
+- [Alignment Assurance V6 integrity addendum](papers/alignment-assurance-v6-integrity-addendum.md)
+- [CloudGuard AI course report — repository edition](papers/cloudguard-ai-course-report.md)
 - [CloudGuard AI research presentation notes](papers/cloudguard-ai-research-presentation.md)
 
-These are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
-
-## What V9 proves - and what it does not
-
-V9 demonstrates that repeated model/verification trials can be captured with model/prompt/evidence metadata, behavioral outcomes, false positives, escalation, latency, request counts, provider token usage when available, and reproducible machine-readable/human-readable experiment artifacts.
-
-V9 does **not** prove that model-backed generation is superior to the deterministic baseline, general natural-language-to-SVA correctness, production EDA equivalence, or SoC-scale transfer. Scripted runs remain plumbing evidence. Live runs are observations, not statistical conclusions. Defensible comparative claims still require a larger independently designed corpus, more mutations per family, a preregistered/frozen analysis plan, repeated live trials, and blinded expert review.
+These are prototypes, course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
