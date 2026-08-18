@@ -48,3 +48,8 @@ The experiment must therefore use seeded defects, independently authored referen
 - Evaluation dataset with seeded defects
 - Baseline comparison
 - Failure taxonomy and research report
+
+
+## Runnable prototype
+
+A dependency-free reference implementation is available in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py). It converts requirements into traceable draft assertions, scenarios, and coverage goals, then applies a separate ambiguity review. The [example requirements](../examples/requirements.json) include both precise and deliberately weak specifications.
