@@ -29,11 +29,16 @@ class Incident:
 class Recommendation:
     incident_id: str
     risk_score: int
-    confidence: float
+    evidence_strength: float
     top_reasons: tuple[tuple[str, float], ...]
     recommended_action: str
     human_approval_required: bool
     explanation_method: str = "additive SHAP-style attribution"
+
+    @property
+    def confidence(self) -> float:
+        """Compatibility alias; this value is heuristic evidence strength, not calibrated confidence."""
+        return self.evidence_strength
 
 
 @dataclass(frozen=True)
@@ -74,7 +79,8 @@ class CloudGuardEngine:
         active_weight = sum(
             self.weights[name] for name, value in incident.signals.items() if value > 0
         )
-        confidence = round(min(0.99, 0.50 + active_weight / 200), 2)
+        evidence_strength = round(min(0.99, 0.50 + active_weight / 200), 2)
+        top_reasons = tuple(item for item in contributions if item[1] > 0)[:3]
 
         if score >= 80:
             action = "disable_account"
@@ -86,8 +92,8 @@ class CloudGuardEngine:
         return Recommendation(
             incident_id=incident.incident_id,
             risk_score=score,
-            confidence=confidence,
-            top_reasons=tuple(contributions),
+            evidence_strength=evidence_strength,
+            top_reasons=top_reasons,
             recommended_action=action,
             human_approval_required=action == "disable_account",
         )
@@ -112,9 +118,9 @@ class CloudGuardEngine:
         return AuditRecord(
             incident_id=recommendation.incident_id,
             recommendation_hash=sha256(payload.encode()).hexdigest(),
-            analyst=analyst,
+            analyst=analyst.strip(),
             decision=decision,
-            rationale=rationale,
+            rationale=rationale.strip(),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -125,4 +131,3 @@ def incident_from_dict(data: Mapping[str, object]) -> Incident:
         account_id=str(data["account_id"]),
         signals=dict(data["signals"]),  # type: ignore[arg-type]
     )
-
