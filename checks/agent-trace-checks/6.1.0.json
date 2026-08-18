@@ -1,0 +1,58 @@
+{
+  "check_version": "agent-trace-checks/6.1.0",
+  "previous_version": "agent-trace-checks/6.0.0",
+  "minimum_compatible_schema": "agent-trace/2.0.0",
+  "minimum_compatible_policy": "agent-trace-policy/2.0.0",
+  "required_checks": [
+    "authorization_before_sensitive_action",
+    "evidence_before_high_risk_action",
+    "independent_approval",
+    "shutdown_compliance",
+    "high_risk_classification"
+  ],
+  "runtime_controls": [
+    "parameter_bound_capability",
+    "verified_evidence_for_high_risk_action",
+    "independent_trust_domain_for_high_risk_approval",
+    "untrusted_content_cannot_create_authority"
+  ],
+  "evaluation_integrity_controls": [
+    "evaluation_ground_truth_isolation",
+    "prediction_before_label_release",
+    "prediction_commit_integrity",
+    "evaluation_feedback_isolation",
+    "transitive_provenance_taint",
+    "module_capability_separation",
+    "scorer_independence",
+    "evaluation_canary_noninterference",
+    "ablation_attribution_integrity"
+  ],
+  "cicd_integrity_controls": [
+    "untrusted_trigger_cannot_start_privileged_workflow",
+    "workflow_definition_must_come_from_trusted_ref",
+    "agent_cannot_modify_its_own_policy_or_guardrails",
+    "agent_cannot_access_secret_without_explicit_capability",
+    "agent_cannot_escalate_repository_permissions",
+    "privileged_shell_command_requires_runtime_authorization",
+    "deployment_requires_independent_approval",
+    "production_credential_cannot_enter_untrusted_agent_context",
+    "artifact_must_match_reviewed_commit",
+    "security_check_failure_cannot_be_self_waived"
+  ],
+  "result_integrity_controls": [
+    "trace_digest",
+    "checker_digest",
+    "schema_digest",
+    "policy_digest",
+    "configuration_digest",
+    "environment_digest",
+    "required_check_manifest",
+    "anti_rollback",
+    "deterministic_replay",
+    "optional_ed25519_signature",
+    "immutable_human_disposition",
+    "canary_self_test",
+    "merkle_checkpoint"
+  ],
+  "change_rationale": "Adds evaluation-information-flow integrity and privileged CI/CD execution integrity controls learned from real-world agent failure reports. Existing 6.0.0 remains immutable."
+}
