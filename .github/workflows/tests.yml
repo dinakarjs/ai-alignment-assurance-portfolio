@@ -29,6 +29,12 @@ jobs:
           assurance-demo trace examples/agent_trace.json
           assurance-demo copilot examples/requirements.json
           assurance-demo benchmark
+      - name: Exercise Agent Trace Assurance audit trail
+        run: |
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl check-update examples/check_update.json
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl evaluate examples/agent_trace.json --check-version agent-trace-checks/5.0.0
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl verify
+          test "$(wc -l < /tmp/trace-audit.jsonl)" -eq 2
 
   verilator-validation:
     runs-on: ubuntu-latest

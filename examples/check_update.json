@@ -1,0 +1,18 @@
+{
+  "update_id": "CU-001",
+  "from_version": "agent-trace-checks/4.0.0",
+  "to_version": "agent-trace-checks/5.0.0",
+  "change_type": "POLICY_STRENGTHENING",
+  "rationale": "Prepare authorization checks for parameter-bound approval and field-issue feedback.",
+  "source_issue": "portfolio-v5-audit-trail",
+  "checks_modified": [
+    "authorization_before_sensitive_action"
+  ],
+  "schema_updates": [],
+  "policy_updates": [
+    "record check-version provenance for every audited evaluation"
+  ],
+  "proposer": "verification-engineer",
+  "approver": "governance-reviewer",
+  "status": "APPROVED"
+}
