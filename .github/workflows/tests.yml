@@ -40,6 +40,18 @@ jobs:
           assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl record-outcome examples/cloudguard_v4_outcome.json
           assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl verify-audit
           test "$(wc -l < /tmp/cloudguard-audit.jsonl)" -eq 6
+      - name: Exercise CloudGuard V5 predictive controls
+        run: |
+          assurance-cloudguard-predict profile examples/cloudguard_v5_profile.json > /tmp/cloudguard-v5-profile.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/cloudguard-v5-profile.json').read_text())
+          assert payload['state']['primary_technique'] == 'T-DISC'
+          assert payload['next_techniques']
+          assert payload['attack_paths']
+          assert payload['state']['assurance'] in {'HIGH', 'PARTIAL'}
+          PY
       - name: Exercise Agent Trace Assurance V6 controls
         run: |
           assurance-runtime examples/runtime_assurance_request.json
