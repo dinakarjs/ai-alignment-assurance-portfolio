@@ -189,7 +189,12 @@ def _response_payload(data: Mapping[str, object]) -> dict[str, object]:
             second_reviewer_trust_domain=str(review_data["second_reviewer_trust_domain"]) if review_data.get("second_reviewer_trust_domain") else None,
         )
     result = CloudGuardPolicyEngine().decide(request, evidence=detection.evidence, review=review)
-    return {"detection": asdict(detection), "request": asdict(request), "review": asdict(review) if review else None, "policy_result": asdict(result)}
+    return {
+        "detection": asdict(detection),
+        "request": asdict(request),
+        "review": asdict(review) if review else None,
+        "policy_result": asdict(result),
+    }
 
 
 def _feedback_payload(data: Mapping[str, object]) -> dict[str, object]:
@@ -243,7 +248,14 @@ def main() -> None:
     elif args.command == "response":
         payload = _response_payload(data)
         if store is not None:
-            store.append("RESPONSE_POLICY_DECISION", payload)
+            review = payload.get("review")
+            if isinstance(review, Mapping):
+                store.append("HUMAN_REVIEW", review)
+            store.append("RESPONSE_POLICY_DECISION", {
+                "request": payload["request"],
+                "policy_result": payload["policy_result"],
+                "detection_id": payload["detection"]["detection_id"],  # type: ignore[index]
+            })
     elif args.command == "feedback":
         payload = _feedback_payload(data)
         if store is not None:
@@ -264,7 +276,6 @@ def main() -> None:
             "followup_required": bool(data["followup_required"]),
             "notes": str(data.get("notes", "")),
         }
-        # Constructing the dataclass catches missing fields and documents shape.
         response_outcome = ResponseOutcome(**payload)
         payload = asdict(response_outcome)
         if store is not None:
