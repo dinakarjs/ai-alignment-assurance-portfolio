@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-alignment-assurance-portfolio"
-version = "0.1.0"
-description = "Runnable prototypes for agentic AI assurance and explainable cloud security"
+version = "0.4.0"
+description = "Runnable prototypes for verification-driven AI assurance and AI-assisted pre-silicon verification"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -14,4 +14,3 @@ assurance-demo = "assurance_portfolio.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
