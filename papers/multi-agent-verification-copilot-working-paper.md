@@ -8,146 +8,214 @@
 
 ## Abstract
 
-Pre-silicon verification translates design intent into test plans, assertions, scenarios, coverage goals, and evidence for sign-off. Large language models can assist this translation, but fluent generation can silently omit qualifiers, blur proposal and approval roles, or produce plausible but invalid assertions. This working paper presents a role-separated verification-copilot architecture and a deterministic reference prototype that preserves requirement identifiers, reviews requirement quality, generates draft SVA-style artifacts for a deliberately small grammar, records generation provenance, and independently reviews generated artifacts. V4 tightens fail-safe behavior by requiring the complete normalized requirement to match a supported grammar; recognizable substrings followed by unsupported clauses fall back instead of being labeled supported. Supported patterns also generate pattern-specific scenarios and coverage goals. The prototype remains a baseline rather than a model-backed agent system or EDA-integrated verifier. A controlled evaluation is proposed using seeded RTL/specification defects, independently authored reference properties, executable assertion checks, and single-agent versus role-separated comparisons.
+Pre-silicon verification translates design intent into assertions, scenarios, coverage goals, and executable evidence. Large language models can accelerate drafting, but fluent generation can silently omit qualifiers, blur proposal and approval roles, or produce plausible but invalid properties. This working paper presents a role-separated verification-copilot architecture and V5 prototype that combines: (1) a deterministic grammar/review baseline, (2) an optional model-backed generator role, (3) a separate model-backed adversarial reviewer role, (4) deterministic assertion validation including a Verilator adapter, and (5) a small labelled defect benchmark. The implementation explicitly separates model proposal, reviewer disposition, tool acceptance, and human review. CI tests the orchestration with scripted backends and exercises a real Verilator validation job without API credentials. V5 does not yet establish that model-backed role separation improves semantic assertion correctness or RTL defect detection; the next controlled experiment must execute candidate properties against seeded RTL mutations and compare deterministic, single-model, and role-separated workflows.
 
-**Keywords:** pre-silicon verification, multi-agent systems, SystemVerilog Assertions, requirements traceability, verification planning, independent review, large language models
+**Keywords:** pre-silicon verification, multi-agent systems, SystemVerilog Assertions, requirements traceability, verification planning, independent review, large language models, tool-grounded AI
 
 ## 1. Motivation
 
 Verification engineers must interpret specifications, resolve ambiguity, design scenarios, write checkers and assertions, define coverage, and investigate failures. An error in requirement interpretation can propagate into every downstream artifact. Generative models can accelerate drafting, but fluency is not evidence of correctness.
 
-The central hypothesis is that role separation plus executable verification-tool feedback can make AI-assisted verification more auditable. Proposal, requirement review, artifact review, tool validation, and human acceptance should be distinguishable stages rather than one opaque model response.
+The central hypothesis is that role separation plus deterministic verification-tool feedback can make AI-assisted verification more auditable. Proposal, requirement review, model review, tool validation, and human acceptance should remain distinguishable stages rather than one opaque model response.
 
 ## 2. Research questions
 
-1. Does role separation improve requirement recall and defect discovery compared with a single-agent workflow?
-2. Does independent review reduce vacuous, syntactically invalid, or semantically incorrect assertions?
-3. Can requirement identifiers and provenance survive the full specification-to-verification workflow?
-4. Which disagreements predict genuine specification defects or missing test intent?
-5. Does the additional orchestration cost reduce or increase total human review time?
-6. How often does conservative abstention outperform partial semantic matching that silently drops qualifiers?
+1. Does role separation improve requirement recall and defect discovery compared with a single-model workflow?
+2. Does an adversarial reviewer reduce syntactically invalid, semantically incorrect, or vacuous assertions?
+3. Does deterministic tool gating catch failures that model self-review misses?
+4. Can provenance survive requirement-to-artifact-to-tool workflows?
+5. Which reviewer disagreements or abstentions predict genuine specification defects?
+6. Does the additional orchestration cost reduce or increase total human review effort?
 
-## 3. Proposed architecture
+## 3. V5 architecture
 
-The full research architecture assigns bounded responsibilities.
+V5 implements four bounded stages.
 
-- **Specification analyst:** extracts requirements, interfaces, assumptions, timing constraints, and ambiguities.
-- **Test-plan agent:** maps requirements to nominal, boundary, error, concurrency, reset, and adversarial scenarios.
-- **Assertion agent:** drafts safety and liveness properties with explicit assumptions.
-- **Adversarial reviewer:** searches for vacuity, missing antecedents, weak timing, conflicting assumptions, and unsupported signals.
-- **Coverage analyst:** identifies requirements without measurable evidence and proposes functional or assertion coverage.
-- **Orchestrator:** preserves identifiers, artifacts, review findings, approval state, and human escalation.
-- **Deterministic verifier:** parses/elaborates assertions and executes simulation/formal checks against reference or generated traces.
+### 3.1 Deterministic baseline
 
-No model-backed role should approve its own output. Human experts remain responsible for acceptance and sign-off.
+[`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) preserves a dependency-free V4 baseline. It performs requirement-quality review, fail-safe complete-match grammar translation, pattern-specific scenario/coverage generation, provenance recording, and independent artifact review.
 
-## 4. Runnable V4 reference prototype
+The deterministic baseline remains important because a model-backed workflow should be compared against something reproducible rather than only against another model configuration.
 
-The repository prototype implements a deterministic slice of this architecture in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py). It is intentionally not described as a deployed multi-agent LLM system.
+### 3.2 Model generator
 
-For each requirement, it:
+[`agentic_verification.py`](../src/assurance_portfolio/agentic_verification.py) defines a `ModelArtifactGenerator` behind a minimal backend interface. The generator receives the natural-language requirement and deterministic-baseline context and must return a strict JSON object containing:
 
-1. normalizes whitespace,
-2. preserves the requirement identifier,
-3. performs independent requirement-quality review,
-4. attempts translation using a small explicit grammar,
-5. labels generation `SUPPORTED` only when the complete normalized requirement matches,
-6. records the matched pattern and extracted translation parameters,
-7. generates pattern-specific scenarios and a requirement-linked coverage goal,
-8. performs a separate artifact review, and
-9. combines findings into a traceable `VerificationArtifact`.
+- one candidate `assert property` statement,
+- scenarios,
+- a measurable coverage goal,
+- explicit assumptions, and
+- rationale.
 
-Supported grammar families currently cover bounded response, alternate no-later-than phrasing, conditional bounded response, prohibition, immediate implication, and persistence-until-release.
+The generator is instructed not to claim sign-off or tool validation.
 
-A requirement such as:
+### 3.3 Independent model reviewer
+
+A separate `ModelArtifactReviewer` sees the requirement and generated draft but cannot edit the candidate. Its output is constrained to:
+
+- `ACCEPT_FOR_TOOL_CHECK`,
+- `REVISE`, or
+- `ABSTAIN`,
+
+plus explicit findings and a recommended next action.
+
+The implementation requires distinct generator and reviewer backend instances. This is workflow separation, not a guarantee of statistical independence: two calls to the same model family may retain correlated blind spots.
+
+### 3.4 Deterministic validator and human-review gate
+
+The reviewer cannot directly mark a draft accepted. Only `ACCEPT_FOR_TOOL_CHECK` sends the assertion to a configured deterministic validator. The final `accepted_for_human_review` flag is true only when both conditions hold:
+
+1. reviewer verdict is `ACCEPT_FOR_TOOL_CHECK`, and
+2. the validator returns `VALID`.
+
+This flag means the candidate can proceed to expert review. It does not mean the property is semantically correct or approved for sign-off.
+
+## 4. Model backend implementation
+
+V5 includes two backends.
+
+- `ScriptedModelBackend` supplies deterministic canned responses for CI and offline testing.
+- `OpenAIResponsesBackend` provides the optional live model path while keeping the core package dependency-free by importing the SDK lazily.
+
+The CLI supports:
 
 ```text
-grant shall assert within 4 cycles after request unless reset or abort
+assurance-demo agentic examples/requirements.json --validator structural
 ```
 
-is deliberately `FALLBACK`, even though its prefix resembles a supported bounded-response requirement. This prevents unsupported trailing semantics from being silently discarded.
+or, when Verilator is installed:
 
-## 5. Assertion and scenario semantics
+```text
+assurance-demo agentic examples/requirements.json --validator verilator
+```
 
-Generated assertions remain drafts. The generator currently assumes `@(posedge clk)` and does not infer clock domains, reset semantics, hierarchy, signal width, unknown-state behavior, or design-specific assumptions. Those limitations are explicit.
+The repository does not store API credentials, and CI does not require model access.
 
-V4 makes scenario generation pattern-aware rather than reusing a generic nominal/boundary/violation template. For example, a prohibition requirement generates scenarios for the safe hold condition and prohibited assertion; a bounded response generates early, exact-boundary, and late/missing response cases.
+## 5. Tool-grounded assertion validation
 
-This improves traceability, but it still does not establish assertion correctness.
+[`sva_validation.py`](../src/assurance_portfolio/sva_validation.py) deliberately separates two validation claims.
 
-## 6. Prototype evidence
+### Structural validator
 
-The repository regression suite now checks:
+`StructuralSVAValidator` catches obvious malformed output such as missing `assert property`, missing semicolon, unbalanced parentheses, or fallback placeholders. It is not an SVA parser.
 
-- successful complete matching for supported grammars,
-- fail-safe fallback for a partial semantic match with an unsupported trailing clause,
-- pattern-specific scenarios and coverage goals,
-- generation provenance,
-- independent artifact-review findings, and
-- deterministic fallback behavior.
+### Verilator validator
 
-These tests validate implementation behavior only. They do not establish semantic SVA correctness, requirement recall, productivity improvement, or superiority of role-separated agents.
+`VerilatorSVAValidator` constructs a standalone SystemVerilog probe module, declares inferred signal identifiers, and invokes the installed Verilator executable in assertion/lint mode. The result records validator identity and tool version where available.
 
-## 7. Proposed controlled evaluation
+A `VALID` result means the candidate was accepted by that concrete Verilator invocation. It does **not** prove universal IEEE-SVA semantics, design-context correctness, non-vacuity, or property adequacy.
 
-Compare:
+The GitHub Actions workflow installs Verilator in a dedicated job and requires a representative assertion to pass the real adapter. This converts the validator from a paper interface into an exercised integration point.
 
-1. **Single-agent baseline:** one model produces and reviews artifacts.
-2. **Unconstrained multi-agent baseline:** multiple model calls collaborate without independence rules.
-3. **Role-separated workflow:** bounded generator/reviewer roles plus deterministic verification-tool feedback and human escalation.
-4. **Deterministic baseline:** the current V4 grammar-driven implementation.
+## 6. Seeded defect benchmark
+
+[`verification_benchmark.py`](../src/assurance_portfolio/verification_benchmark.py) provides a deterministic labelled trace benchmark for two compact requirement families:
+
+- bounded response: `grant shall assert within 4 cycles after request`, and
+- prohibition: `grant shall never assert while reset`.
+
+The benchmark reports:
+
+- evaluated cases,
+- correct classifications,
+- seeded defects detected,
+- false positives,
+- accuracy, and
+- defect-detection rate.
+
+These are synthetic trace results. They are useful for regression and orchestration baselines but are not RTL simulation evidence.
+
+V5 also adds two RTL fixtures:
+
+- [`handshake_good.sv`](../benchmarks/rtl/handshake_good.sv), and
+- [`handshake_late_bug.sv`](../benchmarks/rtl/handshake_late_bug.sv).
+
+The second fixture contains a labelled late-grant mutation beyond the intended bounded-response requirement. V5 does not yet claim behavioural detection of this mutation; it is the target for the next simulator/formal experiment.
+
+## 7. Prototype evidence
+
+The automated test suite now establishes the following implementation facts:
+
+- generator and reviewer roles must use distinct backend instances,
+- model JSON outputs are schema-checked,
+- reviewer `REVISE` prevents tool acceptance,
+- reviewer `ACCEPT_FOR_TOOL_CHECK` plus validator `VALID` produces a human-review candidate,
+- fallback placeholders fail structural validation,
+- deterministic reference monitors detect all labelled synthetic benchmark defects without false positives in the included cases,
+- the existing V4 fail-safe grammar and trace-policy regression suite remains active, and
+- a CI job exercises a real installed Verilator adapter.
+
+These tests establish software behavior only. They do not prove that live model generation improves verification quality.
+
+## 8. Proposed controlled evaluation
+
+The next experiment should compare four conditions on the same dataset:
+
+1. **Deterministic baseline** - V4 complete-match grammar workflow.
+2. **Single-model generation** - one model call produces the artifact without independent review.
+3. **Role-separated model workflow** - generator + reviewer without deterministic tool gating.
+4. **Role-separated + tool-gated workflow** - generator + reviewer + simulator/formal/tool feedback.
 
 ### Dataset
 
 Use compact public RTL blocks or protocols with:
 
 - independently authored reference requirements,
-- reference assertions and expected traces,
-- seeded specification and RTL defects,
-- precise and deliberately ambiguous/paraphrased requirement variants,
-- reset, timing, concurrency, and error-handling cases.
+- reference assertions,
+- expected pass/fail traces,
+- seeded RTL mutations,
+- ambiguous and paraphrased requirement variants,
+- reset/timing/concurrency/error cases.
 
 ### Metrics
 
 - requirement recall and precision,
-- assertion parse and elaboration success,
-- semantic correctness against reference traces,
-- vacuity rate,
+- assertion parse/elaboration success,
+- semantic correctness against labelled traces,
+- vacuity rate where measurable,
 - seeded-defect detection,
 - false-positive rate,
-- functional and assertion coverage,
-- fallback/abstention calibration,
-- provenance completeness,
+- reviewer escalation/abstention rate,
 - human review time,
-- inference/tool-execution cost.
+- latency,
+- model token cost, and
+- verification-tool execution cost.
 
-## 8. Threats to validity
+Repeated trials should vary model, prompt, seed, and orchestration configuration. Human reviewers should be blinded to workflow condition where practical.
 
-Multiple agents may share model-level blind spots and create correlated errors. Role labels alone do not guarantee independence. Regex/grammar baselines can reject valid paraphrases or overfit curated examples. Automated judges can reward plausible syntax without semantic validity. Public blocks do not represent full SoC complexity. Seeded defects may differ from organic specification failures.
+## 9. Threats to validity
 
-These risks motivate parser/simulator/formal scoring, mutation testing, independently authored reference artifacts, blinded human review, and explicit error analysis.
+Multiple agents may share model-level blind spots. Separate calls do not guarantee independent reasoning. A syntax/tool acceptance gate may still admit a semantically wrong assertion. Small synthetic benchmarks can overstate performance. Seeded defects may be easier than organic design failures. Public RTL blocks do not represent proprietary SoC complexity. Human review effort can shift rather than decrease.
 
-## 9. Related work
+These risks motivate executable reference properties, mutation testing, simulation/formal scoring, repeated trials, error taxonomy, and blinded expert review.
 
-AssertLLM processes specification documents and generates assertions from natural language and waveform information, demonstrating both the promise and difficulty of document-level assertion generation. VERT and AssertionBench contribute datasets for evaluating LLM-generated assertions. CoverAssert adds a coverage-guided feedback loop and reports that single-pass generation can miss functional intent. The Accellera UVM standard provides the broader reusable verification methodology into which a future copilot must integrate.
+## 10. What V5 contributes
 
-The proposed contribution is complementary: explicit proposer-reviewer separation, preserved requirement provenance, conservative fallback on unsupported semantics, deterministic tool verification, and evaluation of the whole requirements-to-evidence workflow.
+The contribution is no longer only an architectural proposal. V5 implements a narrow but real end-to-end skeleton:
 
-## 10. Limitations and next milestone
+**requirement → deterministic baseline → model generator → independent model reviewer → deterministic validator → human-review candidate**
 
-The current prototype contains no model calls, RAG, agent framework, UVM integration, RTL parser, simulator, or formal engine. It is the deterministic baseline against which those additions should be evaluated.
+It also provides offline scripted testing, a live model adapter, a concrete Verilator integration, a seeded trace benchmark, and labelled RTL fixtures.
 
-The next milestone is therefore not another regex extension. It is:
+The remaining research question is empirical: whether this architecture actually improves verification outcomes enough to justify its complexity and cost.
 
-1. model-backed generator and reviewer adapters,
-2. parser/elaboration validation for generated SVA,
-3. a small public RTL target with seeded defects and reference properties,
-4. simulation/formal feedback into the workflow,
-5. controlled single-agent versus role-separated evaluation.
+## 11. Limitations and next milestone
 
-## 11. Conclusion
+V5 does not yet:
 
-A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose unsupported semantics, separate proposal from review, and produce executable evidence that engineers can inspect. V4 strengthens the deterministic baseline by making supported parsing fail-safe and scenario generation pattern-aware; the research value now depends on connecting model-backed roles to actual verification tools and measuring outcomes.
+- execute generated assertions against the target RTL fixtures,
+- run formal proof or counterexample generation,
+- measure vacuity on real designs,
+- use RAG over specification documents,
+- integrate UVM regressions or commercial EDA tools,
+- compare live model conditions experimentally, or
+- report statistically meaningful productivity or defect-detection gains.
+
+The next milestone is therefore **behavioural execution and controlled measurement**, not another orchestration abstraction.
+
+## 12. Conclusion
+
+A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose uncertainty, separate proposal from review, ground acceptance in executable tools, and retain human authority. V5 implements that skeleton while maintaining a deterministic baseline and explicit trust boundaries. Its value now depends on executing candidate properties against seeded RTL defects and measuring whether role separation plus tool grounding improves real verification outcomes.
 
 ## References
 
