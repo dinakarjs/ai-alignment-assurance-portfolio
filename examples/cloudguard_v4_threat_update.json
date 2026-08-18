@@ -1,0 +1,41 @@
+{
+  "update_id": "TDU-2026-001",
+  "proposed_by": "cloudguard-threat-agent",
+  "rationale": "New cloud-token replay behavior identified and mapped to a new detection gap.",
+  "affected_detections": ["DET-051"],
+  "affected_playbooks": ["PLAYBOOK-012"],
+  "weakens_existing_control": false,
+  "source_field_issue": "FI-2026-091",
+  "record": {
+    "threat_id": "THREAT-2026-127",
+    "version": "1.0.0",
+    "name": "Cloud token replay",
+    "change_type": "NEW_TTP",
+    "severity": "HIGH",
+    "source": {
+      "source_id": "SRC-MITRE",
+      "name": "MITRE ATT&CK",
+      "trust": "AUTHORITATIVE",
+      "reference": "T0001",
+      "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "techniques": ["T0001"],
+    "observables": ["token reuse across regions", "unusual API burst"],
+    "affected_assets": ["cloud-identity"],
+    "confidence": 90,
+    "notes": "Reference fixture only; not a claim that T0001 is the actual ATT&CK mapping."
+  },
+  "review": {
+    "reviewer": "soc-analyst-23",
+    "disposition": "APPROVE",
+    "rationale": "Source and observables reviewed; regression is clean.",
+    "regression": {
+      "regression_id": "REG-2026-181",
+      "attack_cases_passed": 10,
+      "benign_cases_passed": 20,
+      "unexpected_failures": 0,
+      "false_positive_delta": 0.001,
+      "coverage_added": ["cloud-token-replay"]
+    }
+  }
+}
