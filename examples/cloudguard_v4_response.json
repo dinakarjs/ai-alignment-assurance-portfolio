@@ -1,0 +1,50 @@
+{
+  "detection": {
+    "detection_id": "TD-2026-01987",
+    "incident_id": "INC-2026-1072",
+    "asset_id": "cloud-instance-441",
+    "account_id": "user-224",
+    "threat_id": "THREAT-2026-127",
+    "threat_version": "1.0.0",
+    "detector_id": "DET-051",
+    "detector_version": "2.3.0",
+    "detector_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "severity": "HIGH",
+    "techniques": ["T0001"],
+    "model_hypothesis": "Possible cloud credential theft",
+    "model_probability": 0.81,
+    "evidence_completeness": 0.83,
+    "source_agreement": 0.92,
+    "evidence": [
+      {
+        "evidence_id": "EV-2001",
+        "source": "cloudtrail",
+        "verified": true,
+        "freshness": "CURRENT",
+        "content_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attributes": {"signal": "token-reuse"}
+      }
+    ]
+  },
+  "request": {
+    "incident_id": "INC-2026-1072",
+    "action": "revoke_cloud_token",
+    "target": "token-991",
+    "requested_by": "cloudguard-soc-agent",
+    "impact_tier": 3,
+    "parameters": {"token": "token-991"},
+    "evidence_ids": ["EV-2001"],
+    "threat_ids": ["THREAT-2026-127"],
+    "emergency": false
+  },
+  "review": {
+    "review_id": "HR-2026-551",
+    "incident_id": "INC-2026-1072",
+    "action": "revoke_cloud_token",
+    "reviewer": "analyst-23",
+    "reviewer_trust_domain": "soc",
+    "disposition": "APPROVE",
+    "rationale": "Verified cloud telemetry confirms token replay.",
+    "evidence_reviewed": ["EV-2001"]
+  }
+}
