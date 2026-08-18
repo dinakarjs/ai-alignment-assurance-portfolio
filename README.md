@@ -1,14 +1,14 @@
 # AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
 
-This repository applies semiconductor verification ideas to AI assurance and applies AI-assisted workflows back to verification engineering. It combines three small, dependency-light prototypes:
+This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. It now separates a deterministic reference baseline from an optional model-backed verification path:
 
-1. **Verification Copilot V4** - a role-separated workflow with full-match requirement grammars, draft assertion/scenario generation, independent requirement and artifact review, provenance, and explicit SUPPORTED/FALLBACK status.
-2. **Agent Trace Assurance Engine V4** - a deterministic policy monitor for ordered agent-event traces with transaction-scoped authorization/evidence, consumable and expiring grants, high-risk classification checks, independent approval checks, shutdown monitoring, and explicit PASS/FAIL/INCONCLUSIVE semantics.
-3. **CloudGuard AI V3** - explainable cloud-threat scoring, explicit evidence-strength semantics, human decision capture for high-risk recommendations, and auditable decisions.
+1. **Verification Copilot V5** - V4 deterministic grammar/review baseline plus optional model-backed generator and independent reviewer roles, deterministic assertion validation, and seeded benchmark fixtures.
+2. **Agent Trace Assurance Engine V4** - a deterministic policy monitor for ordered agent-event traces with scoped/consumable/expiring grants, high-risk classification checks, independent approval checks, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
+3. **CloudGuard AI V3** - transparent cloud-threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
 
-The prototypes demonstrate research ideas; they are not production security, alignment, EDA, or autonomous-agent systems.
+These are research prototypes, not production EDA, security, alignment, or autonomous sign-off systems.
 
-## Run
+## Quick start - deterministic/offline
 
 Python 3.10 or newer is required.
 
@@ -17,99 +17,135 @@ python -m pip install -e .
 assurance-demo copilot examples/requirements.json
 assurance-demo trace examples/agent_trace.json
 assurance-demo cloudguard examples/cloudguard_incident.json
+assurance-demo benchmark
 ```
 
-## Test
+## Model-backed V5 path
+
+Install the optional agentic dependency and configure the OpenAI SDK normally:
+
+```bash
+python -m pip install -e ".[agentic]"
+export OPENAI_API_KEY="..."
+export OPENAI_MODEL="..."
+assurance-demo agentic examples/requirements.json --validator structural
+```
+
+If Verilator is installed, the same workflow can require that concrete tool to accept the proposed assertion:
+
+```bash
+assurance-demo agentic examples/requirements.json --validator verilator
+```
+
+The model-backed workflow performs **separate generator and reviewer model calls**. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft is marked `accepted_for_human_review=true` only when the reviewer sends it forward **and** the configured deterministic validator returns `VALID`. This remains a human-review gate, not design sign-off.
+
+Implementation: [`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py)
+
+## Test and CI
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs the unit suite and CLI smoke tests on Python 3.10, 3.11, and 3.12.
+GitHub Actions runs the unit suite and CLI smoke tests on Python 3.10, 3.11, and 3.12. A separate CI job installs Verilator and requires a representative immediate-implication assertion to be accepted by the real tool adapter. CI does not use API credentials; model orchestration is tested with deterministic scripted backends.
 
-## Verification Copilot V4
+## Verification Copilot V5
 
-The Verification Copilot is a role-separated reference workflow for turning natural-language requirements into reviewable verification artifacts.
+### Deterministic V4 baseline
+
+The dependency-free baseline in [`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, reviews requirement quality, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios/coverage goals, and independently reviews generated artifacts.
+
+A requirement is marked **SUPPORTED** only when its complete normalized text matches an explicit grammar. For example:
+
+```text
+grant shall assert within 4 cycles after request unless reset or abort
+```
+
+falls back rather than silently dropping `unless reset or abort`.
+
+Supported deterministic grammar families currently include bounded response, alternate no-later-than phrasing, conditional bounded response, prohibition, immediate implication, and persistence-until-release.
+
+### Model-backed roles
+
+[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds bounded model interfaces without replacing the deterministic baseline:
 
 ```text
 Requirement
-   |\
-   | +--> RequirementReviewer --> specification findings
-   |
-   +----> ArtifactGenerator ----> draft assertion + scenarios + coverage
+    |
+    +--> Deterministic V4 baseline context
+    |
+    +--> Model Generator --------> candidate assertion/scenarios/assumptions
                                       |
                                       v
-                              ArtifactReviewer
+                              Independent Model Reviewer
+                         REVISE / ABSTAIN / ACCEPT_FOR_TOOL_CHECK
                                       |
                                       v
-                             VerificationArtifact
+                              Deterministic Validator
+                                      |
+                                      v
+                           Human-review candidate only
 ```
 
-V4 makes a deliberately conservative change: generation is marked **SUPPORTED** only when the **complete normalized requirement** matches an explicit grammar. A recognizable substring followed by an unsupported clause does not count as success. For example, `grant shall assert within 4 cycles after request unless reset or abort` falls back rather than silently dropping the reset/abort condition.
+The generator and reviewer use distinct backend instances. The included `OpenAIResponsesBackend` performs live model calls; `ScriptedModelBackend` provides reproducible CI/offline testing. Role separation does not guarantee model-level independence if both calls use the same model family, so the output records both backend identities and still requires deterministic validation.
 
-Supported draft patterns currently include:
+### Assertion validation
 
-- bounded response: `grant shall assert within 4 cycles after request`
-- alternate bounded phrasing: `grant shall be asserted no later than 4 cycles following request`
-- conditional bounded response: `if request, grant shall assert within 3 cycles`
-- prohibition: `grant shall never assert while reset`
-- immediate implication: `if request is high, busy shall be high`
-- persistence: `busy shall remain asserted until done`
+[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides two explicit validation levels:
 
-Each supported pattern now produces pattern-specific nominal/boundary-or-transition/violation scenarios and a pattern-specific coverage goal. Translation parameters are retained in the artifact for inspection.
+- **StructuralSVAValidator** - dependency-free checks for obvious malformed/fallback drafts. It is not an SVA parser.
+- **VerilatorSVAValidator** - builds a standalone probe module and invokes installed Verilator in SystemVerilog assertion/lint mode. A `VALID` result means that assertion was accepted by that concrete tool/version; it does not establish universal IEEE-SVA semantics or correctness against a target RTL design.
 
-Example bounded translation:
+V5 therefore distinguishes three different claims that should not be conflated:
 
-```systemverilog
-assert property (@(posedge clk) request |-> ##[1:4] grant);
-```
+1. **model proposal** - a candidate artifact,
+2. **tool acceptance** - syntax/tool support from a concrete validator,
+3. **semantic design correctness** - still requires execution against reference traces/RTL and expert review.
 
-Generated assertions remain **drafts for expert review**. The prototype does not yet parse RTL, elaborate SVA in a simulator/formal tool, infer clock/reset domains, or claim general natural-language-to-SVA correctness.
+## Seeded verification benchmark
 
-Implementation: [`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py)  
-Example input: [`requirements.json`](examples/requirements.json)
+`assurance-demo benchmark` runs a small dependency-free labelled trace benchmark for:
+
+- `grant shall assert within 4 cycles after request`, and
+- `grant shall never assert while reset`.
+
+It reports accuracy, seeded-defect detection rate, and false positives for the reference monitors. This is a reproducible baseline, **not** an RTL simulation result.
+
+The [`benchmarks/rtl`](benchmarks/rtl) directory also contains:
+
+- `handshake_good.sv` - intended bounded-response behavior,
+- `handshake_late_bug.sv` - a deliberately seeded late-grant defect.
+
+Those RTL files are fixtures for the next simulator/formal benchmark step. V5 does not yet claim behavioural detection of the RTL mutation. See [`benchmarks/README.md`](benchmarks/README.md).
 
 ## Agent Trace Assurance V4
 
-Agent Trace Assurance is a deterministic assurance engine for tool-using and autonomous AI systems. It treats each execution as an ordered event trace, evaluates explicit safety properties at relevant steps, and identifies the exact event where a violation occurs. The design adapts pre-silicon verification ideas—properties, monitors, counterexamples, lifecycle state, and property-exercise coverage—to agent behavior.
+Agent Trace Assurance treats each execution as an ordered event trace and evaluates explicit safety properties at relevant steps.
 
 V4 includes:
 
 - normalized action identifiers,
 - transaction/action IDs for authorization and evidence,
 - single-use authorization and evidence consumption,
-- optional event-count expiry through `expires_after_events`,
-- strict scoped matching so unscoped grants do not silently approve scoped actions,
-- explicit rejection of `high_risk=true` actions that are not also classified sensitive,
-- continued evaluation of high-risk authorization/evidence controls even when classification is wrong,
-- explicit violations for missing proposer or approver identity,
-- independent proposer/approver checking,
+- optional event-count expiry,
+- strict scope matching,
+- rejection of `high_risk=true` actions that are not also classified sensitive,
+- continued evaluation of stronger high-risk controls even after that classification error,
+- required proposer and approver identity for independence evaluation,
 - shutdown compliance with audit/status exceptions, and
-- three-state assurance results: **PASS**, **FAIL**, or **INCONCLUSIVE**.
+- PASS/FAIL/INCONCLUSIVE results.
 
-A result is **INCONCLUSIVE** when no violation was observed but one or more required properties were not exercised. The current coverage metric should be understood as **property-exercise coverage**, not full functional/assertion/vacuity coverage.
+Current coverage is **property-exercise coverage**, not full functional/assertion/vacuity coverage. Authorization/evidence events are still assumed trustworthy observations; actor authority, evidence provenance/quality, and trace integrity are future work.
 
-The engine still assumes that authorization/evidence events are trustworthy observations. It does not yet verify whether the actor issuing an authorization has policy authority, assess evidence provenance/quality, or protect trace integrity.
-
-Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py)  
-Example input: [`agent_trace.json`](examples/agent_trace.json)
+Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py)
 
 ## CloudGuard AI V3
 
-CloudGuard is derived from the Responsible AI and Explainability workshop project developed by Kenneth Amanchukwu, John Nova, and Srinivasa Dinakar. The reference scenario uses five human-readable signals with additive contributions: impossible travel, privilege escalation, failed logins, malicious IP, and time anomaly.
+CloudGuard remains a small Responsible-AI demonstration built around transparent weighted threat signals, heuristic evidence strength, top contributing reasons, named human decision/rationale capture, and a recommendation hash.
 
-The prototype deliberately separates:
+Its decision API is an audit/demo mechanism rather than a production execution gate. The explanation is intentionally described as **SHAP-style additive attribution**, not fitted SHAP on a trained production model.
 
-- a transparent risk recommendation,
-- a heuristic **evidence strength** value rather than claiming calibrated statistical confidence,
-- the top three non-zero contributing signals,
-- capture of a named human decision and rationale for high-risk recommendations, and
-- a recommendation hash in the audit record for detecting changes to the recommendation object.
-
-The human decision API is an audit/demo mechanism, not a production execution gate: callers are not technically prevented from ignoring the decision step. It calls its explanations **SHAP-style** because it reproduces additive feature attribution without claiming to run SHAP against a trained production model. The current audit hash is not claimed to make the full audit history tamper-proof.
-
-Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)  
-Example input: [`cloudguard_incident.json`](examples/cloudguard_incident.json)
+Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
 ## Research portfolio
 
@@ -127,16 +163,18 @@ Example input: [`cloudguard_incident.json`](examples/cloudguard_incident.json)
 - [CloudGuard AI course report - repository edition](papers/cloudguard-ai-course-report.md)
 - [CloudGuard AI research presentation notes](papers/cloudguard-ai-research-presentation.md)
 
-These documents are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
+These are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
-## Scope and next milestones
+## What V5 proves - and what it does not
 
-All current runnable results are deterministic and reproducible, and the code is intentionally small enough to audit. V4 improves fail-safe parsing, pattern-specific verification artifacts, and trace-policy bypass resistance, but it does not claim production-grade policy enforcement, general natural-language-to-SVA synthesis, calibrated risk prediction, or empirical alignment guarantees.
+V5 now demonstrates, in runnable code:
 
-The next substantive milestone is intentionally separate from this deterministic baseline:
+- a deterministic verification baseline,
+- separate model-backed generator/reviewer roles,
+- strict JSON contracts and reviewer abstention/revision states,
+- deterministic acceptance gating,
+- a real Verilator tool adapter exercised in CI,
+- a reproducible seeded trace benchmark, and
+- labelled RTL mutation fixtures.
 
-1. add model-backed generator and reviewer roles behind explicit interfaces,
-2. add parser/simulator/formal validation for generated assertions,
-3. use a small open RTL/control target with seeded defects and reference properties,
-4. compare single-agent, unconstrained multi-agent, and role-separated workflows, and
-5. report assertion validity, defect detection, vacuity, false positives, coverage, human review time, and cost.
+V5 **does not yet prove** that the model-backed workflow improves assertion correctness, defect detection, vacuity, coverage, or engineering productivity. The next research milestone is behavioural execution against the RTL fixtures and a controlled comparison of deterministic, single-model, and role-separated workflows using measured outcomes, latency/cost, and human review effort.
