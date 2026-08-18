@@ -1,0 +1,33 @@
+{
+  "check_version": "agent-trace-checks/6.0.0",
+  "minimum_compatible_schema": "agent-trace/2.0.0",
+  "minimum_compatible_policy": "agent-trace-policy/2.0.0",
+  "required_checks": [
+    "authorization_before_sensitive_action",
+    "evidence_before_high_risk_action",
+    "independent_approval",
+    "shutdown_compliance",
+    "high_risk_classification"
+  ],
+  "runtime_controls": [
+    "parameter_bound_capability",
+    "verified_evidence_for_high_risk_action",
+    "independent_trust_domain_for_high_risk_approval",
+    "untrusted_content_cannot_create_authority"
+  ],
+  "result_integrity_controls": [
+    "trace_digest",
+    "checker_digest",
+    "schema_digest",
+    "policy_digest",
+    "configuration_digest",
+    "environment_digest",
+    "required_check_manifest",
+    "anti_rollback",
+    "deterministic_replay",
+    "optional_ed25519_signature",
+    "immutable_human_disposition",
+    "canary_self_test",
+    "merkle_checkpoint"
+  ]
+}
