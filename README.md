@@ -1,41 +1,50 @@
-# AI Alignment Assurance Portfolio
+# AI Alignment Assurance Portfolio - Runnable Prototypes
 
-Research portfolio exploring how pre-silicon verification, formal assurance, coverage, and adversarial testing can strengthen the safety of agentic AI systems.
+This repository combines three small, dependency-light prototypes:
 
-## Perspective
+1. **CloudGuard AI** - explainable cloud-threat scoring, human approval for high-risk actions, and auditable decisions.
+2. **Agent Trace Assurance** - executable checks for authorization, evidence, independent approval, and shutdown compliance.
+3. **Multi-Agent Verification Copilot** - traceable draft assertions, scenarios, coverage goals, and independent ambiguity review.
 
-My professional background is in complex semiconductor and pre-silicon verification using SystemVerilog, UVM, assertions, formal methods, coverage, emulation, and automation. My current research interests include generative and agentic AI, Responsible AI, governance, and AI safety.
+The prototypes demonstrate research ideas; they are not production security or alignment systems.
 
-This portfolio develops a simple premise: advanced AI systems need more than point-in-time benchmark scores. They need explicit properties, structured adversarial scenarios, coverage evidence, counterexamples, runtime monitoring, and revalidation as capabilities change.
+## Run
 
-## Projects
+Python 3.10 or newer is required.
 
-1. [Alignment Assurance Lab](projects/alignment-assurance-lab.md)  
-   A proposed experimental environment for property-based, coverage-driven evaluation of tool-using agents.
+```bash
+python -m pip install -e .
+assurance-demo cloudguard examples/cloudguard_incident.json
+assurance-demo trace examples/agent_trace.json
+assurance-demo copilot examples/requirements.json
+```
 
-2. [Multi-Agent Verification Copilot](projects/multi-agent-verification-copilot.md)  
-   A role-separated copilot architecture for specification analysis, test planning, assertion generation, adversarial review, and evidence traceability.
+## Test
 
-3. [Pre-Silicon-Inspired Assurance Architecture for Agentic AI Systems](projects/pre-silicon-inspired-agentic-ai-assurance.md)  
-   A research proposal for continuous assurance using executable properties, scenario generation, runtime monitors, coverage, and counterexamples.
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
 
-4. [Responsible AI and DBA Research Agenda](projects/responsible-ai-dba-research.md)  
-   An agenda for translating governance principles into falsifiable claims, technical evidence, ownership, and release decisions.
+## CloudGuard AI
 
-## Research principles
+CloudGuard is derived from the Responsible AI and Explainability workshop project developed by Kenneth Amanchukwu, John Nova, and Srinivasa Dinakar. The reference scenario uses five human-readable signals with additive contributions: impossible travel, privilege escalation, failed logins, malicious IP, and time anomaly.
 
-- Treat assurance claims as hypotheses that can fail.
-- Separate proposal, verification, and approval roles.
-- Measure meaningful state and hazard coverage.
-- Preserve minimal counterexamples as regression tests.
-- Make assumptions, uncertainty, and residual risk explicit.
-- Revalidate whenever capabilities, tools, or deployment context change.
+The prototype deliberately separates:
 
-## Scope and status
+- a transparent risk recommendation,
+- a mandatory human decision for account disablement, and
+- a tamper-evident recommendation hash in the audit record.
 
-These pages describe current research concepts, proposed experiments, and prototype roadmaps. They do not claim completed empirical results unless supporting evidence is added. The repository is intended to evolve into reproducible experiments, datasets, code, and research write-ups.
+It calls its explanations **SHAP-style** because it reproduces additive feature attribution without claiming to run SHAP against a trained production model.
 
-## Author
+## Research portfolio
 
-**Srinivasa Dinakar**  
-Senior pre-silicon verification professional and DBA researcher in emerging technologies and generative AI.
+- [Alignment Assurance Lab](projects/alignment-assurance-lab.md)
+- [Multi-Agent Verification Copilot](projects/multi-agent-verification-copilot.md)
+- [Pre-Silicon-Inspired Assurance Architecture](projects/pre-silicon-inspired-agentic-ai-assurance.md)
+- [Responsible AI and DBA Research Agenda](projects/responsible-ai-dba-research.md)
+- [CloudGuard AI](projects/cloudguard-ai.md)
+
+## Scope
+
+All results are deterministic and reproducible. The code is intentionally small enough to audit. Future work should replace synthetic weights and scenarios with calibrated models, real-world datasets, threat-model validation, and user studies with SOC analysts.
