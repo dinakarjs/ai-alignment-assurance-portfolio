@@ -10,6 +10,9 @@
   {
     "id": "REQ-003",
     "text": "The system should respond quickly and securely."
+  },
+  {
+    "id": "REQ-004",
+    "text": "grant shall assert within 4 cycles after request"
   }
 ]
-

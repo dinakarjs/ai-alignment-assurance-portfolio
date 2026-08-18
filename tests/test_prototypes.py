@@ -1,7 +1,7 @@
 import unittest
 
 from assurance_portfolio.cloudguard import CloudGuardEngine, Incident
-from assurance_portfolio.trace_assurance import TraceAssuranceEngine
+from assurance_portfolio.trace_assurance import AssuranceStatus, TraceAssuranceEngine
 from assurance_portfolio.verification_copilot import Requirement, VerificationCopilot
 
 
@@ -43,9 +43,7 @@ class PrototypeTests(unittest.TestCase):
             )
         )
         with self.assertRaises(PermissionError):
-            engine.decide(
-                result, analyst="", decision="approve", rationale="Confirmed"
-            )
+            engine.decide(result, analyst="", decision="approve", rationale="Confirmed")
         record = engine.decide(
             result,
             analyst="analyst-7",
@@ -55,13 +53,22 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(record.analyst, "analyst-7")
         self.assertEqual(len(record.recommendation_hash), 64)
 
-    def test_trace_passes_with_authorization_and_independent_approval(self) -> None:
-        trace = [
-            {"type": "evidence"},
-            {"type": "authorize", "action": "disable_account"},
+    def _complete_trace(self) -> list[dict[str, object]]:
+        return [
+            {
+                "type": "evidence",
+                "action": "disable_account",
+                "transaction_id": "tx-1",
+            },
+            {
+                "type": "authorize",
+                "action": "disable_account",
+                "transaction_id": "tx-1",
+            },
             {
                 "type": "action",
                 "action": "disable_account",
+                "transaction_id": "tx-1",
                 "sensitive": True,
                 "high_risk": True,
                 "proposer": "agent",
@@ -69,47 +76,158 @@ class PrototypeTests(unittest.TestCase):
             },
             {"type": "shutdown"},
         ]
-        report = TraceAssuranceEngine().evaluate(trace)
+
+    def test_trace_passes_with_scoped_authorization_evidence_and_approval(self) -> None:
+        report = TraceAssuranceEngine().evaluate(self._complete_trace())
+        self.assertEqual(report.status, AssuranceStatus.PASS)
         self.assertTrue(report.passed)
         self.assertFalse(report.uncovered_properties)
 
-    def test_trace_detects_multiple_property_violations(self) -> None:
+    def test_trace_is_inconclusive_when_properties_are_uncovered(self) -> None:
+        report = TraceAssuranceEngine().evaluate([{"type": "status"}])
+        self.assertEqual(report.status, AssuranceStatus.INCONCLUSIVE)
+        self.assertFalse(report.passed)
+        self.assertTrue(report.uncovered_properties)
+
+    def test_authorization_is_consumed_after_one_use(self) -> None:
+        trace = self._complete_trace()[:-1]
+        trace.append(
+            {
+                "type": "action",
+                "action": "disable_account",
+                "transaction_id": "tx-1",
+                "sensitive": True,
+                "high_risk": False,
+            }
+        )
+        report = TraceAssuranceEngine().evaluate(trace)
+        self.assertIn(
+            "authorization_before_sensitive_action",
+            {item.property_name for item in report.violations},
+        )
+
+    def test_transaction_mismatch_does_not_reuse_authorization_or_evidence(self) -> None:
+        trace = self._complete_trace()
+        trace[2]["transaction_id"] = "tx-2"
+        report = TraceAssuranceEngine().evaluate(trace)
+        names = {item.property_name for item in report.violations}
+        self.assertIn("authorization_before_sensitive_action", names)
+        self.assertIn("evidence_before_high_risk_action", names)
+
+    def test_unscoped_grants_do_not_approve_scoped_transaction(self) -> None:
+        trace = self._complete_trace()
+        del trace[0]["transaction_id"]
+        del trace[1]["transaction_id"]
+        report = TraceAssuranceEngine().evaluate(trace)
+        names = {item.property_name for item in report.violations}
+        self.assertIn("authorization_before_sensitive_action", names)
+        self.assertIn("evidence_before_high_risk_action", names)
+
+    def test_authorization_can_expire(self) -> None:
         trace = [
+            {
+                "type": "authorize",
+                "action": "delete",
+                "transaction_id": "tx-1",
+                "expires_after_events": 1,
+            },
+            {"type": "status"},
             {
                 "type": "action",
                 "action": "delete",
+                "transaction_id": "tx-1",
                 "sensitive": True,
-                "high_risk": True,
-                "proposer": "agent",
-                "approver": "agent",
             },
-            {"type": "shutdown"},
-            {"type": "action", "action": "message"},
         ]
         report = TraceAssuranceEngine().evaluate(trace)
-        names = {item.property_name for item in report.violations}
-        self.assertEqual(
-            names,
-            {
-                "authorization_before_sensitive_action",
-                "evidence_before_high_risk_action",
-                "independent_approval",
-                "shutdown_compliance",
-            },
+        self.assertIn(
+            "authorization_before_sensitive_action",
+            {item.property_name for item in report.violations},
         )
+
+    def test_high_risk_action_without_approver_is_violation(self) -> None:
+        trace = self._complete_trace()
+        del trace[2]["approver"]
+        report = TraceAssuranceEngine().evaluate(trace)
+        self.assertIn(
+            "independent_approval",
+            {item.property_name for item in report.violations},
+        )
+
+    def test_principal_names_are_normalized_before_independence_check(self) -> None:
+        trace = self._complete_trace()
+        trace[2]["proposer"] = " Agent "
+        trace[2]["approver"] = "AGENT"
+        report = TraceAssuranceEngine().evaluate(trace)
+        self.assertIn(
+            "independent_approval",
+            {item.property_name for item in report.violations},
+        )
+
+    def test_action_names_are_normalized(self) -> None:
+        trace = self._complete_trace()
+        trace[0]["action"] = " Disable Account "
+        trace[1]["action"] = "DISABLE   ACCOUNT"
+        report = TraceAssuranceEngine().evaluate(trace)
+        self.assertEqual(report.status, AssuranceStatus.PASS)
+
+    def test_empty_action_in_grant_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            TraceAssuranceEngine().evaluate([{"type": "authorize", "action": "  "}])
+
+    def test_negative_expiry_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            TraceAssuranceEngine().evaluate(
+                [
+                    {
+                        "type": "authorize",
+                        "action": "delete",
+                        "expires_after_events": -1,
+                    }
+                ]
+            )
+
+    def test_shutdown_allows_audit_and_status_but_blocks_actions(self) -> None:
+        trace = self._complete_trace()
+        trace.extend(
+            [
+                {"type": "audit"},
+                {"type": "status"},
+                {"type": "action", "action": "message"},
+            ]
+        )
+        report = TraceAssuranceEngine().evaluate(trace)
+        shutdown_violations = [
+            item
+            for item in report.violations
+            if item.property_name == "shutdown_compliance"
+        ]
+        self.assertEqual(len(shutdown_violations), 1)
 
     def test_copilot_flags_ambiguous_requirement(self) -> None:
         artifact = VerificationCopilot().propose(
             Requirement("REQ-9", "The system should respond quickly and securely.")
         )
-        self.assertIn(
-            "Requirement lacks a clear normative term", artifact.review_findings
+        self.assertIn("Requirement lacks a clear normative term", artifact.review_findings)
+        self.assertIn("Requirement contains an ambiguous adjective", artifact.review_findings)
+
+    def test_copilot_generates_temporal_draft_for_bounded_requirement(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-10", "grant shall assert within 4 cycles after request")
         )
-        self.assertIn(
-            "Requirement contains an ambiguous adjective", artifact.review_findings
+        self.assertEqual(
+            artifact.assertion,
+            "assert property (@(posedge clk) request |-> ##[1:4] grant);",
         )
+        self.assertIn("4-cycle boundary", artifact.scenarios[1])
+        self.assertFalse(artifact.review_findings)
+
+    def test_copilot_falls_back_to_explicit_expert_review_draft(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-11", "The service shall preserve authorization state.")
+        )
+        self.assertIn("expert review required", artifact.assertion)
 
 
 if __name__ == "__main__":
     unittest.main()
-

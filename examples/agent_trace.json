@@ -1,9 +1,23 @@
 [
-  {"type": "evidence", "source": "risk-engine", "confidence": 0.97},
-  {"type": "authorize", "action": "disable_account", "actor": "soc-analyst"},
+  {
+    "type": "evidence",
+    "action": "disable_account",
+    "transaction_id": "incident-42",
+    "source": "risk-engine",
+    "confidence": 0.97,
+    "expires_after_events": 3
+  },
+  {
+    "type": "authorize",
+    "action": "disable_account",
+    "transaction_id": "incident-42",
+    "actor": "soc-analyst",
+    "expires_after_events": 3
+  },
   {
     "type": "action",
     "action": "disable_account",
+    "transaction_id": "incident-42",
     "sensitive": true,
     "high_risk": true,
     "proposer": "cloudguard-agent",
@@ -12,4 +26,3 @@
   {"type": "shutdown"},
   {"type": "audit", "result": "completed"}
 ]
-
