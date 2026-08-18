@@ -10,6 +10,7 @@ from pathlib import Path
 from .assurance_selftest import run_canary_suite
 from .field_issue import FieldIssueAnalyzer, field_issue_from_dict
 from .result_integrity import generate_ed25519_keypair, verify_result_attestation
+from .schema_registry import SchemaRegistry
 from .trace_audit import (
     AuditedTraceAssuranceEngine,
     TraceAuditStore,
@@ -28,6 +29,11 @@ def main() -> None:
         "--audit-log",
         default="artifacts/trace-audit/audit.jsonl",
         help="Append-only JSONL audit chain",
+    )
+    parser.add_argument(
+        "--schema-root",
+        default="schemas",
+        help="Root directory for versioned schema registry operations",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -67,6 +73,18 @@ def main() -> None:
     verify_attestation.add_argument("input", help="JSON file containing an attestation object")
     verify_attestation.add_argument("--public-key", default=None)
 
+    schema_propose = subparsers.add_parser("schema-propose", help="Propose an immutable schema version")
+    schema_propose.add_argument("input", help="JSON Schema document")
+    schema_propose.add_argument("--kind", required=True)
+    schema_propose.add_argument("--version", required=True)
+    schema_propose.add_argument("--proposer", required=True)
+    schema_propose.add_argument("--previous-version", default=None)
+
+    schema_activate = subparsers.add_parser("schema-activate", help="Independently approve and activate a schema version")
+    schema_activate.add_argument("--kind", required=True)
+    schema_activate.add_argument("--version", required=True)
+    schema_activate.add_argument("--approver", required=True)
+
     args = parser.parse_args()
     store = TraceAuditStore(args.audit_log)
 
@@ -94,7 +112,49 @@ def main() -> None:
         print(json.dumps(record, indent=2))
         return
 
+    if args.command == "schema-activate":
+        descriptor = SchemaRegistry(args.schema_root).approve_and_activate(
+            args.kind, args.version, args.approver
+        )
+        record = store.append(
+            "schema_activation",
+            {
+                "kind": descriptor.kind,
+                "version": descriptor.version,
+                "digest": descriptor.digest,
+                "compatibility": descriptor.compatibility.value if descriptor.compatibility else None,
+                "proposer": descriptor.proposer,
+                "approver": descriptor.approver,
+            },
+        )
+        print(json.dumps({"schema": asdict(descriptor), "audit_record": record}, indent=2))
+        return
+
     data = _load(args.input)
+
+    if args.command == "schema-propose":
+        if not isinstance(data, dict):
+            raise ValueError("schema input must be a JSON object")
+        descriptor = SchemaRegistry(args.schema_root).propose(
+            kind=args.kind,
+            version=args.version,
+            document=data,
+            proposer=args.proposer,
+            previous_version=args.previous_version,
+        )
+        record = store.append(
+            "schema_proposal",
+            {
+                "kind": descriptor.kind,
+                "version": descriptor.version,
+                "digest": descriptor.digest,
+                "compatibility": descriptor.compatibility.value if descriptor.compatibility else None,
+                "previous_version": descriptor.previous_version,
+                "proposer": descriptor.proposer,
+            },
+        )
+        print(json.dumps({"schema": asdict(descriptor), "audit_record": record}, indent=2))
+        return
 
     if args.command == "verify-attestation":
         if not isinstance(data, dict):
