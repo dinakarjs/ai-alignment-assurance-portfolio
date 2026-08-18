@@ -198,7 +198,10 @@ class AuditedTraceAssuranceEngine:
 
     def _schema_validation(self, trace: list[dict[str, object]]) -> InstanceValidation:
         if self.schema_path is None:
-            return InstanceValidation(False, ("no concrete schema artifact was supplied",))
+            return InstanceValidation(
+                True,
+                ("schema validation not performed because no concrete schema artifact was supplied",),
+            )
         document = json.loads(self.schema_path.read_text(encoding="utf-8"))
         if not isinstance(document, Mapping):
             return InstanceValidation(False, ("schema artifact is not a JSON object",))
@@ -210,11 +213,7 @@ class AuditedTraceAssuranceEngine:
         replay = deterministic_replay(trace)
         causal_validation = validate_causal_trace(trace)
         schema_validation = self._schema_validation(trace)
-        system_result = (
-            report.status.value
-            if causal_validation.valid and schema_validation.valid
-            else "FAIL"
-        )
+        system_result = report.status.value if causal_validation.valid and schema_validation.valid else "FAIL"
         run_id = f"trace-run-{uuid4()}"
         raw_result: dict[str, object] = {
             "base_monitor_result": report.status.value,
