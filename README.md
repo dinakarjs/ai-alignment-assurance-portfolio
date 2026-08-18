@@ -84,6 +84,14 @@ assurance-demo copilot examples/requirements.json
 - [Responsible AI and DBA Research Agenda](projects/responsible-ai-dba-research.md)
 - [CloudGuard AI](projects/cloudguard-ai.md)
 
+## Papers and research artifacts
+
+- [Artifact catalog](papers/README.md)
+- [CloudGuard AI course report - repository edition](papers/cloudguard-ai-course-report.md)
+- [CloudGuard AI research presentation notes](papers/cloudguard-ai-research-presentation.md)
+
+The CloudGuard documents are academic course and presentation materials, not peer-reviewed publications. No completed manuscript is currently listed for Agent Trace Assurance or the Verification Copilot.
+
 ## Scope
 
 All results are deterministic and reproducible. The code is intentionally small enough to audit. Future work should replace synthetic weights and scenarios with calibrated models, real-world datasets, threat-model validation, and user studies with SOC analysts.
