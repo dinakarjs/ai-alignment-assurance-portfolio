@@ -138,6 +138,7 @@ class AuditedTraceAssuranceEngine:
         event_schema_version: str = DEFAULT_EVENT_SCHEMA_VERSION,
         policy_version: str = DEFAULT_POLICY_VERSION,
         checker_source_path: str | Path | None = None,
+        check_manifest_path: str | Path | None = None,
         schema_path: str | Path | None = None,
         policy_path: str | Path | None = None,
         signing_key_path: str | Path | None = None,
@@ -152,6 +153,7 @@ class AuditedTraceAssuranceEngine:
         self.event_schema_version = event_schema_version
         self.policy_version = policy_version
         self.checker_source_path = Path(checker_source_path) if checker_source_path else Path(__file__).with_name("trace_assurance.py")
+        self.check_manifest_path = Path(check_manifest_path) if check_manifest_path else None
         self.schema_path = Path(schema_path) if schema_path else None
         self.policy_path = Path(policy_path) if policy_path else None
         self.signing_key_path = Path(signing_key_path) if signing_key_path else None
@@ -162,6 +164,10 @@ class AuditedTraceAssuranceEngine:
     @property
     def checker_digest(self) -> str:
         return sha256_file(self.checker_source_path)
+
+    @property
+    def check_manifest_digest(self) -> str:
+        return digest_or_identifier(self.check_manifest_path, self.check_version)
 
     @property
     def schema_digest(self) -> str:
@@ -175,11 +181,29 @@ class AuditedTraceAssuranceEngine:
     def artifact_binding_complete(self) -> bool:
         return (
             self.checker_source_path.exists()
+            and self.check_manifest_path is not None
+            and self.check_manifest_path.exists()
             and self.schema_path is not None
             and self.schema_path.exists()
             and self.policy_path is not None
             and self.policy_path.exists()
         )
+
+    def _required_checks(self) -> tuple[str, ...]:
+        if self.check_manifest_path is None:
+            return tuple(self.engine.PROPERTIES)
+        value = json.loads(self.check_manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(value, Mapping):
+            raise ValueError("check manifest must be a JSON object")
+        declared_version = str(value.get("check_version", ""))
+        if declared_version and declared_version != self.check_version:
+            raise ValueError(
+                f"check manifest version {declared_version!r} does not match configured {self.check_version!r}"
+            )
+        checks = value.get("required_checks")
+        if not isinstance(checks, list) or not all(isinstance(item, str) and item.strip() for item in checks):
+            raise ValueError("check manifest required_checks must be a non-empty string list")
+        return tuple(checks)
 
     @property
     def check_set_fingerprint(self) -> str:
@@ -188,6 +212,7 @@ class AuditedTraceAssuranceEngine:
                 "check_version": self.check_version,
                 "properties": list(self.engine.PROPERTIES),
                 "checker_digest": self.checker_digest,
+                "check_manifest_digest": self.check_manifest_digest,
                 "event_schema_version": self.event_schema_version,
                 "schema_digest": self.schema_digest,
                 "policy_version": self.policy_version,
@@ -225,7 +250,7 @@ class AuditedTraceAssuranceEngine:
             "causal_trace_validation": asdict(causal_validation),
             "schema_validation": asdict(schema_validation),
         }
-        required_checks = tuple(self.engine.PROPERTIES)
+        required_checks = self._required_checks()
         executed_checks = tuple(self.engine.PROPERTIES)
         attestation = build_result_attestation(
             run_id=run_id,
@@ -233,6 +258,7 @@ class AuditedTraceAssuranceEngine:
             trace=trace,
             raw_result=raw_result,
             checker_digest=self.checker_digest,
+            check_manifest_digest=self.check_manifest_digest,
             schema_digest=self.schema_digest,
             policy_digest=self.policy_digest,
             config=self.configuration,
@@ -257,6 +283,7 @@ class AuditedTraceAssuranceEngine:
             "minimum_check_version": self.minimum_check_version,
             "check_set_fingerprint": self.check_set_fingerprint,
             "checker_digest": self.checker_digest,
+            "check_manifest_digest": self.check_manifest_digest,
             "event_schema_version": self.event_schema_version,
             "schema_digest": self.schema_digest,
             "policy_version": self.policy_version,
