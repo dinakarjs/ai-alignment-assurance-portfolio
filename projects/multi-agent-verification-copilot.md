@@ -50,6 +50,10 @@ The experiment must therefore use seeded defects, independently authored referen
 - Failure taxonomy and research report
 
 
+## Working paper
+
+[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) is a working paper and prototype report. It separates implemented behavior and unit-test evidence from the proposed comparative study.
+
 ## Runnable prototype
 
 A dependency-free reference implementation is available in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py). It converts requirements into traceable draft assertions, scenarios, and coverage goals, then applies a separate ambiguity review. The [example requirements](../examples/requirements.json) include both precise and deliberately weak specifications.
