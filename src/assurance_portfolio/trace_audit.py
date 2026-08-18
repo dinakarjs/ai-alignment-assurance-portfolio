@@ -10,6 +10,7 @@ from typing import Iterable, Mapping
 from uuid import uuid4
 
 from .assurance_selftest import deterministic_replay
+from .causal_trace import validate_causal_trace
 from .result_integrity import (
     IntegrityStatus,
     build_result_attestation,
@@ -18,6 +19,7 @@ from .result_integrity import (
     sha256_file,
     sha256_object,
 )
+from .schema_registry import InstanceValidation, SchemaRegistry
 from .trace_assurance import AssuranceReport, TraceAssuranceEngine
 
 AUDIT_SCHEMA_VERSION = "trace-audit/2.0.0"
@@ -170,6 +172,16 @@ class AuditedTraceAssuranceEngine:
         return digest_or_identifier(self.policy_path, self.policy_version)
 
     @property
+    def artifact_binding_complete(self) -> bool:
+        return (
+            self.checker_source_path.exists()
+            and self.schema_path is not None
+            and self.schema_path.exists()
+            and self.policy_path is not None
+            and self.policy_path.exists()
+        )
+
+    @property
     def check_set_fingerprint(self) -> str:
         return _sha256(
             {
@@ -184,23 +196,41 @@ class AuditedTraceAssuranceEngine:
             }
         )
 
+    def _schema_validation(self, trace: list[dict[str, object]]) -> InstanceValidation:
+        if self.schema_path is None:
+            return InstanceValidation(False, ("no concrete schema artifact was supplied",))
+        document = json.loads(self.schema_path.read_text(encoding="utf-8"))
+        if not isinstance(document, Mapping):
+            return InstanceValidation(False, ("schema artifact is not a JSON object",))
+        return SchemaRegistry.validate_instances(document, trace)
+
     def evaluate(self, events: Iterable[Mapping[str, object]]) -> tuple[AssuranceReport, dict[str, object]]:
         trace = [dict(item) for item in events]
         report = self.engine.evaluate(trace)
         replay = deterministic_replay(trace)
+        causal_validation = validate_causal_trace(trace)
+        schema_validation = self._schema_validation(trace)
+        system_result = (
+            report.status.value
+            if causal_validation.valid and schema_validation.valid
+            else "FAIL"
+        )
         run_id = f"trace-run-{uuid4()}"
         raw_result: dict[str, object] = {
-            "result": report.status.value,
+            "base_monitor_result": report.status.value,
+            "system_result": system_result,
             "violations": [asdict(item) for item in report.violations],
             "covered_properties": list(report.covered_properties),
             "uncovered_properties": list(report.uncovered_properties),
             "replay": asdict(replay),
+            "causal_trace_validation": asdict(causal_validation),
+            "schema_validation": asdict(schema_validation),
         }
         required_checks = tuple(self.engine.PROPERTIES)
-        executed_checks = tuple(sorted(set(report.covered_properties) | set(report.uncovered_properties)))
+        executed_checks = tuple(self.engine.PROPERTIES)
         attestation = build_result_attestation(
             run_id=run_id,
-            machine_verdict=report.status.value,
+            machine_verdict=system_result,
             trace=trace,
             raw_result=raw_result,
             checker_digest=self.checker_digest,
@@ -212,10 +242,11 @@ class AuditedTraceAssuranceEngine:
             minimum_check_version=self.minimum_check_version,
             required_checks=required_checks,
             executed_checks=executed_checks,
+            artifact_binding_complete=self.artifact_binding_complete,
             signing_key_path=self.signing_key_path,
             signer_id=self.signer_id,
         )
-        if not replay.consistent:
+        if not replay.consistent or not causal_validation.valid or not schema_validation.valid:
             attestation = type(attestation)(
                 **{**asdict(attestation), "integrity_status": IntegrityStatus.INVALID}
             )
@@ -233,11 +264,15 @@ class AuditedTraceAssuranceEngine:
             "policy_digest": self.policy_digest,
             "configuration_digest": _sha256(self.configuration),
             "git_commit_sha": self.git_commit_sha,
-            "result": report.status.value,
+            "base_monitor_result": report.status.value,
+            "system_result": system_result,
+            "result": system_result,
             "violations": raw_result["violations"],
             "covered_properties": raw_result["covered_properties"],
             "uncovered_properties": raw_result["uncovered_properties"],
             "deterministic_replay": raw_result["replay"],
+            "causal_trace_validation": raw_result["causal_trace_validation"],
+            "schema_validation": raw_result["schema_validation"],
             "attestation": asdict(attestation),
         }
         audit_record = self.audit_store.append("evaluation", payload)
