@@ -1,0 +1,43 @@
+{
+  "profile_id": "TP-2026-00441",
+  "horizon": "IMMEDIATE",
+  "top_k": 4,
+  "path_depth": 3,
+  "start_nodes": ["identity-dev"],
+  "observability": {
+    "expected_sources": ["identity", "cloudtrail", "endpoint", "network"],
+    "available_sources": ["identity", "cloudtrail", "endpoint"]
+  },
+  "observations": [
+    {"observation_id": "OBS-1", "technique_id": "T-CRED", "sequence": 1, "source": "identity", "verified": true, "evidence_weight": 1.0},
+    {"observation_id": "OBS-2", "technique_id": "T-DISC", "sequence": 2, "source": "cloudtrail", "verified": true, "evidence_weight": 1.0}
+  ],
+  "transition_sequences": [
+    ["T-CRED", "T-DISC", "T-PRIV", "T-SECRET"],
+    ["T-CRED", "T-DISC", "T-PRIV", "T-DATA"],
+    ["T-CRED", "T-PRIV", "T-SECRET"],
+    ["T-DISC", "T-PRIV", "T-DATA"]
+  ],
+  "exposure_graph": {
+    "nodes": [
+      {"node_id": "identity-dev", "kind": "identity", "criticality": 0.4},
+      {"node_id": "role-prod", "kind": "role", "criticality": 0.8},
+      {"node_id": "secret-prod", "kind": "secret", "criticality": 0.9},
+      {"node_id": "data-prod", "kind": "storage", "criticality": 1.0}
+    ],
+    "edges": [
+      {"source": "identity-dev", "target": "role-prod", "relation": "can_assume"},
+      {"source": "role-prod", "target": "secret-prod", "relation": "can_read"},
+      {"source": "role-prod", "target": "data-prod", "relation": "can_read"}
+    ],
+    "vulnerabilities": [
+      {"asset_id": "role-prod", "cve": "CVE-EXAMPLE-1", "epss": 0.62, "kev": true, "mitigated": false}
+    ],
+    "technique_exposures": [
+      {"technique_id": "T-DISC", "target_nodes": ["role-prod"], "control_effectiveness": 0.2},
+      {"technique_id": "T-PRIV", "target_nodes": ["role-prod"], "control_effectiveness": 0.1, "requires_vulnerability": true},
+      {"technique_id": "T-SECRET", "target_nodes": ["secret-prod"], "control_effectiveness": 0.3},
+      {"technique_id": "T-DATA", "target_nodes": ["data-prod"], "control_effectiveness": 0.2}
+    ]
+  }
+}

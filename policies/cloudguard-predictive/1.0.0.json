@@ -1,0 +1,27 @@
+{
+  "policy_version": "cloudguard-predictive-policy/1.0.0",
+  "principles": {
+    "forecast_is_advisory": true,
+    "model_score_is_not_authority": true,
+    "local_exposure_must_condition_preemption": true,
+    "missing_observability_must_reduce_assurance": true,
+    "preemptive_response_uses_cloudguard_v4_gate": true,
+    "online_self_retraining_is_forbidden": true,
+    "training_examples_enter_quarantine_first": true,
+    "untrusted_training_data_requires_two_corroborations_and_analyst_approval": true,
+    "champion_challenger_promotion_requires_independent_review": true
+  },
+  "promotion_thresholds": {
+    "minimum_next_technique_recall_at_3": 0.60,
+    "maximum_brier_score": 0.25,
+    "maximum_false_preemption_rate": 0.10,
+    "minimum_old_threat_retention": 0.90,
+    "poison_suite_must_pass": true,
+    "minimum_shadow_cases": 20
+  },
+  "forecast_horizons": ["IMMEDIATE", "TACTICAL", "STRATEGIC"],
+  "notes": [
+    "Thresholds are reference defaults for the prototype and require empirical justification before production use.",
+    "Empirical transition scores and local exposure priority are transparent ranking components, not calibrated attacker-intent probabilities."
+  ]
+}
