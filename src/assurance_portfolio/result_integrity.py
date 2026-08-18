@@ -1,9 +1,10 @@
 """Result-integrity primitives for Agent Trace Assurance.
 
 The module binds an evaluation result to its inputs, checker implementation,
-policy/schema artifacts, configuration, runtime environment, and expected check
-manifest. Optional Ed25519 signatures turn structurally valid provenance into a
-cryptographically verifiable attestation only when concrete artifacts are bound.
+policy/schema/check-manifest artifacts, configuration, runtime environment, and
+expected check manifest. Optional Ed25519 signatures turn structurally valid
+provenance into a cryptographically verifiable attestation only when concrete
+artifacts are bound.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-ATTESTATION_VERSION = "agent-trace-attestation/1.1.0"
+ATTESTATION_VERSION = "agent-trace-attestation/1.2.0"
 
 
 def canonical_json(value: object) -> str:
@@ -194,6 +195,7 @@ def build_result_attestation(
     minimum_check_version: str,
     required_checks: Iterable[str],
     executed_checks: Iterable[str],
+    check_manifest_digest: str | None = None,
     artifact_binding_complete: bool = True,
     signing_key_path: str | Path | None = None,
     signer_id: str | None = None,
@@ -203,6 +205,9 @@ def build_result_attestation(
     executed = tuple(sorted(set(executed_checks)))
     required_present = set(required).issubset(executed)
     anti_rollback = version_at_least(check_version, minimum_check_version)
+    manifest_digest = check_manifest_digest or sha256_object(
+        {"required": required, "executed": executed}
+    )
     base: dict[str, object] = {
         "attestation_version": ATTESTATION_VERSION,
         "run_id": run_id,
@@ -211,7 +216,7 @@ def build_result_attestation(
         "trace_digest": sha256_object(trace),
         "raw_result_digest": sha256_object(raw_result),
         "checker_digest": checker_digest,
-        "check_manifest_digest": sha256_object({"required": required, "executed": executed}),
+        "check_manifest_digest": manifest_digest,
         "schema_digest": schema_digest,
         "policy_digest": policy_digest,
         "config_digest": sha256_object(dict(config)),
@@ -306,7 +311,7 @@ def verify_result_attestation(
             anti_rollback,
             artifact_binding_complete,
             payload_digest_matches,
-            "signature verified, but schema/policy artifacts were not concretely bound",
+            "signature verified, but checker/check-manifest/schema/policy artifacts were not concretely bound",
         )
 
     return AttestationVerification(
