@@ -184,6 +184,27 @@ class PrototypeTests(unittest.TestCase):
             {item.property_name for item in report.violations},
         )
 
+    def test_high_risk_action_without_proposer_is_violation(self) -> None:
+        trace = self._complete_trace()
+        del trace[2]["proposer"]
+        report = TraceAssuranceEngine().evaluate(trace)
+        details = [
+            item.detail
+            for item in report.violations
+            if item.property_name == "independent_approval"
+        ]
+        self.assertIn("High-risk action had no recorded proposer", details)
+
+    def test_high_risk_action_cannot_bypass_controls_by_clearing_sensitive(self) -> None:
+        trace = self._complete_trace()
+        trace[2]["sensitive"] = False
+        report = TraceAssuranceEngine().evaluate(trace)
+        names = {item.property_name for item in report.violations}
+        self.assertIn("high_risk_classification", names)
+        # Matching grants still get consumed because stronger high-risk controls run.
+        self.assertNotIn("authorization_before_sensitive_action", names)
+        self.assertNotIn("evidence_before_high_risk_action", names)
+
     def test_principal_names_are_normalized_before_independence_check(self) -> None:
         trace = self._complete_trace()
         trace[2]["proposer"] = " Agent "
@@ -247,7 +268,23 @@ class PrototypeTests(unittest.TestCase):
         )
         self.assertEqual(artifact.generation_status, GenerationStatus.SUPPORTED)
         self.assertEqual(artifact.matched_pattern, "bounded_response_after")
+        self.assertIn("4-cycle boundary", artifact.scenarios[1])
+        self.assertIn("response at bound", artifact.coverage_goal)
         self.assertFalse(artifact.review_findings)
+
+    def test_copilot_rejects_partial_semantic_match(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement(
+                "REQ-10B",
+                "grant shall assert within 4 cycles after request unless reset or abort",
+            )
+        )
+        self.assertEqual(artifact.generation_status, GenerationStatus.FALLBACK)
+        self.assertIsNone(artifact.matched_pattern)
+        self.assertIn(
+            "complete requirement did not match a supported grammar",
+            artifact.artifact_review_findings[0],
+        )
 
     def test_copilot_supports_no_later_than_following(self) -> None:
         artifact = VerificationCopilot().propose(
@@ -258,6 +295,7 @@ class PrototypeTests(unittest.TestCase):
         )
         self.assertIn("##[1:4] grant", artifact.assertion)
         self.assertEqual(artifact.matched_pattern, "no_later_than_following")
+        self.assertIn("4-cycle boundary", artifact.scenarios[1])
 
     def test_copilot_supports_conditional_bounded_response(self) -> None:
         artifact = VerificationCopilot().propose(
@@ -266,12 +304,14 @@ class PrototypeTests(unittest.TestCase):
         self.assertIn("request |-> ##[1:3] grant", artifact.assertion)
         self.assertEqual(artifact.matched_pattern, "conditional_bounded_response")
 
-    def test_copilot_supports_prohibition(self) -> None:
+    def test_copilot_supports_prohibition_with_pattern_specific_scenarios(self) -> None:
         artifact = VerificationCopilot().propose(
             Requirement("REQ-14", "grant shall never assert while reset")
         )
         self.assertIn("reset |-> !grant", artifact.assertion)
         self.assertEqual(artifact.matched_pattern, "prohibition_while_condition")
+        self.assertIn("grant asserts while reset is active", artifact.scenarios[2])
+        self.assertIn("prohibited assertion", artifact.coverage_goal)
 
     def test_copilot_supports_immediate_implication(self) -> None:
         artifact = VerificationCopilot().propose(
@@ -279,13 +319,15 @@ class PrototypeTests(unittest.TestCase):
         )
         self.assertIn("request |-> busy", artifact.assertion)
         self.assertEqual(artifact.matched_pattern, "immediate_implication")
+        self.assertIn("request is high while busy is low", artifact.scenarios[2])
 
-    def test_copilot_supports_persistence(self) -> None:
+    def test_copilot_supports_persistence_without_rose_only_activation(self) -> None:
         artifact = VerificationCopilot().propose(
             Requirement("REQ-16", "busy shall remain asserted until done")
         )
-        self.assertIn("busy until_with done", artifact.assertion)
+        self.assertIn("(busy && !done) |=> (busy || done)", artifact.assertion)
         self.assertEqual(artifact.matched_pattern, "persistence_until_release")
+        self.assertIn("busy deasserts before done", artifact.scenarios[2])
 
     def test_copilot_fallback_is_explicitly_reviewed(self) -> None:
         artifact = VerificationCopilot().propose(
@@ -294,7 +336,7 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(artifact.generation_status, GenerationStatus.FALLBACK)
         self.assertIn("FALLBACK", artifact.assertion)
         self.assertIn(
-            "Generator used FALLBACK; no supported temporal pattern matched",
+            "Generator used FALLBACK; complete requirement did not match a supported grammar",
             artifact.artifact_review_findings,
         )
 
