@@ -39,3 +39,8 @@ External monitors and invariant checks remain useful only while the evaluator re
 ## Success criteria
 
 A useful result would show that the framework discovers distinct, reproducible failures missed by standard evaluations and produces evidence that supports concrete deployment decisions. A negative result—showing poor observability or weak transfer—would still clarify the limits of verification analogies in alignment.
+
+
+## Prototype evidence
+
+The repository now includes a working [agent trace assurance engine](../src/assurance_portfolio/trace_assurance.py) and [role-separated verification copilot](../src/assurance_portfolio/verification_copilot.py). Together they demonstrate executable properties, coverage accounting, independent approval, counterexample-style violations, and requirement-to-artifact traceability.
