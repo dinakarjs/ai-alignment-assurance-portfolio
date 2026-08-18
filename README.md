@@ -1,14 +1,14 @@
 # AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
 
-This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. It now separates a deterministic reference baseline from an optional model-backed verification path:
+This repository applies semiconductor verification ideas to AI assurance and applies AI/agent workflows back to verification engineering. The implementation now has four deliberately separated evidence layers:
 
-1. **Verification Copilot V5** - V4 deterministic grammar/review baseline plus optional model-backed generator and independent reviewer roles, deterministic assertion validation, and seeded benchmark fixtures.
-2. **Agent Trace Assurance Engine V4** - a deterministic policy monitor for ordered agent-event traces with scoped/consumable/expiring grants, high-risk classification checks, independent approval checks, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
-3. **CloudGuard AI V3** - transparent cloud-threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
+1. **Verification Copilot V6** - deterministic baseline, optional model-backed generator/reviewer roles, deterministic assertion validation, synthetic trace benchmarks, and executable RTL mutation detection.
+2. **Agent Trace Assurance Engine V4** - scoped/consumable/expiring authorization and evidence, high-risk classification checks, independent approval, shutdown monitoring, and PASS/FAIL/INCONCLUSIVE semantics.
+3. **CloudGuard AI V3** - transparent threat scoring, evidence-strength semantics, human decision capture, and auditable recommendations.
 
-These are research prototypes, not production EDA, security, alignment, or autonomous sign-off systems.
+These remain research prototypes rather than production EDA, security, alignment, or autonomous sign-off systems.
 
-## Quick start - deterministic/offline
+## Quick start
 
 Python 3.10 or newer is required.
 
@@ -20,7 +20,15 @@ assurance-demo cloudguard examples/cloudguard_incident.json
 assurance-demo benchmark
 ```
 
-## Model-backed V5 path
+For the V6 RTL behavioral benchmark, install Icarus Verilog and run:
+
+```bash
+assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
+```
+
+The benchmark succeeds only when the intended handshake RTL passes the four-cycle request/grant requirement and the deliberately late-grant mutation fails it.
+
+## Model-backed path
 
 Install the optional agentic dependency and configure the OpenAI SDK normally:
 
@@ -31,29 +39,21 @@ export OPENAI_MODEL="..."
 assurance-demo agentic examples/requirements.json --validator structural
 ```
 
-If Verilator is installed, the same workflow can require that concrete tool to accept the proposed assertion:
+If Verilator is installed:
 
 ```bash
 assurance-demo agentic examples/requirements.json --validator verilator
 ```
 
-The model-backed workflow performs **separate generator and reviewer model calls**. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft is marked `accepted_for_human_review=true` only when the reviewer sends it forward **and** the configured deterministic validator returns `VALID`. This remains a human-review gate, not design sign-off.
+The workflow performs separate generator and reviewer model calls. The reviewer can return `ACCEPT_FOR_TOOL_CHECK`, `REVISE`, or `ABSTAIN`. A draft reaches `accepted_for_human_review=true` only when the reviewer sends it forward and the configured deterministic validator returns `VALID`. This is still a human-review gate, not design sign-off.
 
 Implementation: [`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py)
 
-## Test and CI
+## Verification Copilot V6
 
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
+### Deterministic baseline
 
-GitHub Actions runs the unit suite and CLI smoke tests on Python 3.10, 3.11, and 3.12. A separate CI job installs Verilator and requires a representative immediate-implication assertion to be accepted by the real tool adapter. CI does not use API credentials; model orchestration is tested with deterministic scripted backends.
-
-## Verification Copilot V5
-
-### Deterministic V4 baseline
-
-The dependency-free baseline in [`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, reviews requirement quality, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios/coverage goals, and independently reviews generated artifacts.
+[`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py) preserves requirement IDs, performs requirement-quality review, translates a deliberately narrow complete-match grammar into SVA-style drafts, generates pattern-specific scenarios and coverage goals, and independently reviews generated artifacts.
 
 A requirement is marked **SUPPORTED** only when its complete normalized text matches an explicit grammar. For example:
 
@@ -61,18 +61,16 @@ A requirement is marked **SUPPORTED** only when its complete normalized text mat
 grant shall assert within 4 cycles after request unless reset or abort
 ```
 
-falls back rather than silently dropping `unless reset or abort`.
-
-Supported deterministic grammar families currently include bounded response, alternate no-later-than phrasing, conditional bounded response, prohibition, immediate implication, and persistence-until-release.
+falls back rather than silently discarding the unsupported qualifier.
 
 ### Model-backed roles
 
-[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds bounded model interfaces without replacing the deterministic baseline:
+[`agentic_verification.py`](src/assurance_portfolio/agentic_verification.py) adds:
 
 ```text
 Requirement
     |
-    +--> Deterministic V4 baseline context
+    +--> Deterministic baseline context
     |
     +--> Model Generator --------> candidate assertion/scenarios/assumptions
                                       |
@@ -87,55 +85,68 @@ Requirement
                            Human-review candidate only
 ```
 
-The generator and reviewer use distinct backend instances. The included `OpenAIResponsesBackend` performs live model calls; `ScriptedModelBackend` provides reproducible CI/offline testing. Role separation does not guarantee model-level independence if both calls use the same model family, so the output records both backend identities and still requires deterministic validation.
+The generator and reviewer must use distinct backend instances. The included `OpenAIResponsesBackend` performs live calls; `ScriptedModelBackend` provides reproducible offline/CI testing. Separate calls do not guarantee statistical independence when both roles use the same model family.
 
-### Assertion validation
+## Three verification evidence levels
 
-[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides two explicit validation levels:
+V6 explicitly distinguishes three claims.
 
-- **StructuralSVAValidator** - dependency-free checks for obvious malformed/fallback drafts. It is not an SVA parser.
-- **VerilatorSVAValidator** - builds a standalone probe module and invokes installed Verilator in SystemVerilog assertion/lint mode. A `VALID` result means that assertion was accepted by that concrete tool/version; it does not establish universal IEEE-SVA semantics or correctness against a target RTL design.
+### 1. Synthetic trace behavior
 
-V5 therefore distinguishes three different claims that should not be conflated:
+`assurance-demo benchmark` runs labelled bounded-response and prohibition traces and reports accuracy, defect detection, and false positives. These are deterministic synthetic traces, not RTL simulation.
 
-1. **model proposal** - a candidate artifact,
-2. **tool acceptance** - syntax/tool support from a concrete validator,
-3. **semantic design correctness** - still requires execution against reference traces/RTL and expert review.
+### 2. Standalone assertion tool acceptance
 
-## Seeded verification benchmark
+[`sva_validation.py`](src/assurance_portfolio/sva_validation.py) provides:
 
-`assurance-demo benchmark` runs a small dependency-free labelled trace benchmark for:
+- `StructuralSVAValidator` for shallow dependency-free checks,
+- `VerilatorSVAValidator` for a real installed Verilator lint/assertion probe.
 
-- `grant shall assert within 4 cycles after request`, and
-- `grant shall never assert while reset`.
+A Verilator `VALID` result means the assertion was accepted by that concrete tool/version. It does not prove semantic correctness against RTL.
 
-It reports accuracy, seeded-defect detection rate, and false positives for the reference monitors. This is a reproducible baseline, **not** an RTL simulation result.
+### 3. V6 behavioral RTL mutation proof
 
-The [`benchmarks/rtl`](benchmarks/rtl) directory also contains:
+[`rtl_behavioral.py`](src/assurance_portfolio/rtl_behavioral.py) compiles and simulates two SystemVerilog designs with Icarus Verilog:
 
-- `handshake_good.sv` - intended bounded-response behavior,
-- `handshake_late_bug.sv` - a deliberately seeded late-grant defect.
+- [`handshake_good.sv`](benchmarks/rtl/handshake_good.sv) - expected to satisfy `grant shall assert within 4 cycles after request`,
+- [`handshake_late_bug.sv`](benchmarks/rtl/handshake_late_bug.sv) - deliberately delays grant beyond the bound and is expected to fail.
 
-Those RTL files are fixtures for the next simulator/formal benchmark step. V5 does not yet claim behavioural detection of the RTL mutation. See [`benchmarks/README.md`](benchmarks/README.md).
+The generated SystemVerilog testbench pulses `request`, samples `grant`, and enforces the four-cycle temporal requirement at runtime. A compile error or unavailable simulator does **not** count as successful mutation detection.
+
+The benchmark reports:
+
+- per-design PASS/FAIL state,
+- expected outcome,
+- simulator/tool version,
+- mutation-detection rate,
+- false-positive count,
+- whether all expected outcomes were met.
+
+GitHub Actions contains a dedicated `rtl-behavioral-proof` job that installs Icarus Verilog and runs this benchmark.
+
+See [`benchmarks/README.md`](benchmarks/README.md).
+
+## CI
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+GitHub Actions now runs:
+
+- Python 3.10 unit tests and CLI smoke tests,
+- Python 3.11 unit tests and CLI smoke tests,
+- Python 3.12 unit tests and CLI smoke tests,
+- a real Verilator assertion-validation job,
+- a real Icarus Verilog behavioral RTL mutation job.
+
+CI does not use model API credentials; model orchestration is exercised with deterministic scripted backends.
 
 ## Agent Trace Assurance V4
 
-Agent Trace Assurance treats each execution as an ordered event trace and evaluates explicit safety properties at relevant steps.
+Agent Trace Assurance treats each execution as an ordered event trace and evaluates explicit safety properties at relevant steps. It includes scoped and single-use grants, optional event-count expiry, strict scope matching, high-risk classification checks, required proposer/approver identities, shutdown compliance, and PASS/FAIL/INCONCLUSIVE results.
 
-V4 includes:
-
-- normalized action identifiers,
-- transaction/action IDs for authorization and evidence,
-- single-use authorization and evidence consumption,
-- optional event-count expiry,
-- strict scope matching,
-- rejection of `high_risk=true` actions that are not also classified sensitive,
-- continued evaluation of stronger high-risk controls even after that classification error,
-- required proposer and approver identity for independence evaluation,
-- shutdown compliance with audit/status exceptions, and
-- PASS/FAIL/INCONCLUSIVE results.
-
-Current coverage is **property-exercise coverage**, not full functional/assertion/vacuity coverage. Authorization/evidence events are still assumed trustworthy observations; actor authority, evidence provenance/quality, and trace integrity are future work.
+Current coverage is **property-exercise coverage**, not full functional/assertion/vacuity coverage. Authorization/evidence events are still assumed trustworthy observations; actor authority, evidence provenance/quality, and trace integrity remain future work.
 
 Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py)
 
@@ -143,7 +154,7 @@ Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.p
 
 CloudGuard remains a small Responsible-AI demonstration built around transparent weighted threat signals, heuristic evidence strength, top contributing reasons, named human decision/rationale capture, and a recommendation hash.
 
-Its decision API is an audit/demo mechanism rather than a production execution gate. The explanation is intentionally described as **SHAP-style additive attribution**, not fitted SHAP on a trained production model.
+Its decision API is an audit/demo mechanism rather than a production execution gate. The explanation is described as **SHAP-style additive attribution**, not fitted SHAP on a trained production model.
 
 Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
@@ -165,16 +176,19 @@ Implementation: [`cloudguard.py`](src/assurance_portfolio/cloudguard.py)
 
 These are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
-## What V5 proves - and what it does not
+## What V6 proves - and what it does not
 
-V5 now demonstrates, in runnable code:
+V6 demonstrates in runnable code:
 
-- a deterministic verification baseline,
+- deterministic requirement-to-artifact generation and review,
 - separate model-backed generator/reviewer roles,
-- strict JSON contracts and reviewer abstention/revision states,
+- strict model-output contracts and abstention/revision states,
 - deterministic acceptance gating,
-- a real Verilator tool adapter exercised in CI,
-- a reproducible seeded trace benchmark, and
-- labelled RTL mutation fixtures.
+- real Verilator tool acceptance in CI,
+- reproducible synthetic trace defect benchmarks,
+- real simulation of labelled RTL fixtures, and
+- behavioral detection of one seeded late-grant mutation without falsely failing the intended implementation, when the dedicated RTL CI job passes.
 
-V5 **does not yet prove** that the model-backed workflow improves assertion correctness, defect detection, vacuity, coverage, or engineering productivity. The next research milestone is behavioural execution against the RTL fixtures and a controlled comparison of deterministic, single-model, and role-separated workflows using measured outcomes, latency/cost, and human review effort.
+V6 still does **not** prove that model-backed generation is superior to the deterministic baseline, that one mutation generalizes to SoC-scale verification, that generated assertions are non-vacuous across arbitrary designs, or that the workflow improves engineering productivity.
+
+The next controlled milestone should compare deterministic, single-model, and role-separated model workflows on the same RTL mutation corpus using measured behavioral defect detection, false positives, abstention, latency/cost, and expert review effort.
