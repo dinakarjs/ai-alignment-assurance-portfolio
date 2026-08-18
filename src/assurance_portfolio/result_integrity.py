@@ -3,7 +3,7 @@
 The module binds an evaluation result to its inputs, checker implementation,
 policy/schema artifacts, configuration, runtime environment, and expected check
 manifest. Optional Ed25519 signatures turn structurally valid provenance into a
-cryptographically verifiable attestation.
+cryptographically verifiable attestation only when concrete artifacts are bound.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-ATTESTATION_VERSION = "agent-trace-attestation/1.0.0"
+ATTESTATION_VERSION = "agent-trace-attestation/1.1.0"
 
 
 def canonical_json(value: object) -> str:
@@ -97,6 +97,7 @@ class AttestationVerification:
     valid_signature: bool
     required_checks_present: bool
     anti_rollback_passed: bool
+    artifact_binding_complete: bool
     payload_digest_matches: bool
     detail: str
 
@@ -122,6 +123,7 @@ class ResultAttestation:
     executed_checks: tuple[str, ...]
     anti_rollback_passed: bool
     required_checks_present: bool
+    artifact_binding_complete: bool
     signer_id: str | None
     payload_digest: str
     signature_b64: str | None
@@ -192,6 +194,7 @@ def build_result_attestation(
     minimum_check_version: str,
     required_checks: Iterable[str],
     executed_checks: Iterable[str],
+    artifact_binding_complete: bool = True,
     signing_key_path: str | Path | None = None,
     signer_id: str | None = None,
     environment_extra: Mapping[str, object] | None = None,
@@ -220,15 +223,17 @@ def build_result_attestation(
         "executed_checks": executed,
         "anti_rollback_passed": anti_rollback,
         "required_checks_present": required_present,
+        "artifact_binding_complete": artifact_binding_complete,
         "signer_id": signer_id if signing_key_path else None,
     }
     payload_digest = sha256_object(base)
     signature_b64: str | None = None
-    if signing_key_path is not None and required_present and anti_rollback:
+    prerequisites_valid = required_present and anti_rollback
+    if signing_key_path is not None and prerequisites_valid:
         signature = _load_private_key(signing_key_path).sign(_signature_payload(base))
         signature_b64 = base64.b64encode(signature).decode("ascii")
-        status = IntegrityStatus.VERIFIED
-    elif not required_present or not anti_rollback:
+        status = IntegrityStatus.VERIFIED if artifact_binding_complete else IntegrityStatus.UNVERIFIED
+    elif not prerequisites_valid:
         status = IntegrityStatus.INVALID
     else:
         status = IntegrityStatus.UNVERIFIED
@@ -255,6 +260,7 @@ def verify_result_attestation(
     anti_rollback = bool(value.get("anti_rollback_passed")) and version_at_least(
         str(value.get("check_version", "")), str(value.get("minimum_check_version", ""))
     )
+    artifact_binding_complete = bool(value.get("artifact_binding_complete"))
 
     if not required_present or not anti_rollback or not payload_digest_matches:
         return AttestationVerification(
@@ -262,17 +268,18 @@ def verify_result_attestation(
             False,
             required_present,
             anti_rollback,
+            artifact_binding_complete,
             payload_digest_matches,
             "manifest, rollback, or payload-digest validation failed",
         )
 
     if public_key_path is None or not signature_b64:
-        status = IntegrityStatus.UNVERIFIED
         return AttestationVerification(
-            status,
+            IntegrityStatus.UNVERIFIED,
             False,
             required_present,
             anti_rollback,
+            artifact_binding_complete,
             payload_digest_matches,
             "attestation is structurally valid but has no verifiable signature",
         )
@@ -286,8 +293,20 @@ def verify_result_attestation(
             False,
             required_present,
             anti_rollback,
+            artifact_binding_complete,
             payload_digest_matches,
             "Ed25519 signature verification failed",
+        )
+
+    if not artifact_binding_complete:
+        return AttestationVerification(
+            IntegrityStatus.UNVERIFIED,
+            True,
+            required_present,
+            anti_rollback,
+            artifact_binding_complete,
+            payload_digest_matches,
+            "signature verified, but schema/policy artifacts were not concretely bound",
         )
 
     return AttestationVerification(
@@ -295,6 +314,7 @@ def verify_result_attestation(
         True,
         required_present,
         anti_rollback,
+        artifact_binding_complete,
         payload_digest_matches,
         f"signature verified (claimed status was {claimed_status})",
     )
