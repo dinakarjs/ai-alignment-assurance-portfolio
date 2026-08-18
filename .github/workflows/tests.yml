@@ -68,3 +68,5 @@ jobs:
           sudo apt-get install -y iverilog
       - name: Prove seeded RTL mutation is detected
         run: assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
+      - name: Exercise V7 four-condition comparison
+        run: assurance-demo controlled-eval --rtl-root benchmarks/rtl
