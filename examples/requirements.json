@@ -14,5 +14,21 @@
   {
     "id": "REQ-004",
     "text": "grant shall assert within 4 cycles after request"
+  },
+  {
+    "id": "REQ-005",
+    "text": "the grant signal shall be asserted no later than 4 cycles following the request"
+  },
+  {
+    "id": "REQ-006",
+    "text": "grant shall never assert while reset"
+  },
+  {
+    "id": "REQ-007",
+    "text": "if request is high, busy shall be high"
+  },
+  {
+    "id": "REQ-008",
+    "text": "busy shall remain asserted until done"
   }
 ]
