@@ -114,6 +114,15 @@ class PrototypeTests(unittest.TestCase):
         self.assertIn("authorization_before_sensitive_action", names)
         self.assertIn("evidence_before_high_risk_action", names)
 
+    def test_unscoped_grants_do_not_approve_scoped_transaction(self) -> None:
+        trace = self._complete_trace()
+        del trace[0]["transaction_id"]
+        del trace[1]["transaction_id"]
+        report = TraceAssuranceEngine().evaluate(trace)
+        names = {item.property_name for item in report.violations}
+        self.assertIn("authorization_before_sensitive_action", names)
+        self.assertIn("evidence_before_high_risk_action", names)
+
     def test_authorization_can_expire(self) -> None:
         trace = [
             {
@@ -145,12 +154,38 @@ class PrototypeTests(unittest.TestCase):
             {item.property_name for item in report.violations},
         )
 
+    def test_principal_names_are_normalized_before_independence_check(self) -> None:
+        trace = self._complete_trace()
+        trace[2]["proposer"] = " Agent "
+        trace[2]["approver"] = "AGENT"
+        report = TraceAssuranceEngine().evaluate(trace)
+        self.assertIn(
+            "independent_approval",
+            {item.property_name for item in report.violations},
+        )
+
     def test_action_names_are_normalized(self) -> None:
         trace = self._complete_trace()
         trace[0]["action"] = " Disable Account "
         trace[1]["action"] = "DISABLE   ACCOUNT"
         report = TraceAssuranceEngine().evaluate(trace)
         self.assertEqual(report.status, AssuranceStatus.PASS)
+
+    def test_empty_action_in_grant_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            TraceAssuranceEngine().evaluate([{"type": "authorize", "action": "  "}])
+
+    def test_negative_expiry_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            TraceAssuranceEngine().evaluate(
+                [
+                    {
+                        "type": "authorize",
+                        "action": "delete",
+                        "expires_after_events": -1,
+                    }
+                ]
+            )
 
     def test_shutdown_allows_audit_and_status_but_blocks_actions(self) -> None:
         trace = self._complete_trace()
@@ -163,7 +198,9 @@ class PrototypeTests(unittest.TestCase):
         )
         report = TraceAssuranceEngine().evaluate(trace)
         shutdown_violations = [
-            item for item in report.violations if item.property_name == "shutdown_compliance"
+            item
+            for item in report.violations
+            if item.property_name == "shutdown_compliance"
         ]
         self.assertEqual(len(shutdown_violations), 1)
 
@@ -184,6 +221,12 @@ class PrototypeTests(unittest.TestCase):
         )
         self.assertIn("4-cycle boundary", artifact.scenarios[1])
         self.assertFalse(artifact.review_findings)
+
+    def test_copilot_falls_back_to_explicit_expert_review_draft(self) -> None:
+        artifact = VerificationCopilot().propose(
+            Requirement("REQ-11", "The service shall preserve authorization state.")
+        )
+        self.assertIn("expert review required", artifact.assertion)
 
 
 if __name__ == "__main__":
