@@ -8,15 +8,15 @@
 
 ## Abstract
 
-Pre-silicon verification translates design intent into test plans, assertions, scenarios, coverage goals, and evidence for sign-off. Large language models can assist this translation, but a single assistant may generate plausible artifacts without detecting ambiguity, preserving traceability, or separating proposal from approval. This working paper presents a role-separated verification-copilot architecture in which specialized agents propose artifacts and an independent review role challenges their assumptions before human acceptance. The accompanying dependency-free Python prototype converts natural-language requirements into requirement-linked draft assertions, nominal, boundary, and adversarial scenarios, coverage goals, and ambiguity findings. The current implementation is intentionally narrow: it demonstrates provenance and review separation rather than correct SystemVerilog Assertion generation or production EDA integration. A controlled evaluation is proposed to compare a single-agent baseline, an unconstrained multi-agent workflow, and a role-separated workflow using seeded defects, independently authored reference properties, and explicit abstention analysis.
+Pre-silicon verification translates design intent into test plans, assertions, scenarios, coverage goals, and evidence for sign-off. Large language models can assist this translation, but fluent generation can silently omit qualifiers, blur proposal and approval roles, or produce plausible but invalid assertions. This working paper presents a role-separated verification-copilot architecture and a deterministic reference prototype that preserves requirement identifiers, reviews requirement quality, generates draft SVA-style artifacts for a deliberately small grammar, records generation provenance, and independently reviews generated artifacts. V4 tightens fail-safe behavior by requiring the complete normalized requirement to match a supported grammar; recognizable substrings followed by unsupported clauses fall back instead of being labeled supported. Supported patterns also generate pattern-specific scenarios and coverage goals. The prototype remains a baseline rather than a model-backed agent system or EDA-integrated verifier. A controlled evaluation is proposed using seeded RTL/specification defects, independently authored reference properties, executable assertion checks, and single-agent versus role-separated comparisons.
 
 **Keywords:** pre-silicon verification, multi-agent systems, SystemVerilog Assertions, requirements traceability, verification planning, independent review, large language models
 
 ## 1. Motivation
 
-Verification engineers must interpret specifications, resolve ambiguity, design scenarios, write checkers and assertions, define coverage, and investigate failures. These activities are coupled: an error in requirement interpretation can propagate into every downstream artifact. Generative models can accelerate drafting, but fluency is not evidence of correctness.
+Verification engineers must interpret specifications, resolve ambiguity, design scenarios, write checkers and assertions, define coverage, and investigate failures. An error in requirement interpretation can propagate into every downstream artifact. Generative models can accelerate drafting, but fluency is not evidence of correctness.
 
-The central hypothesis is that role separation can make AI-assisted verification more auditable. Instead of allowing one model invocation to interpret a requirement, generate an artifact, and implicitly approve it, the workflow records distinct proposal and review stages. Disagreement, missing evidence, and ambiguous language become escalation signals rather than hidden assumptions.
+The central hypothesis is that role separation plus executable verification-tool feedback can make AI-assisted verification more auditable. Proposal, requirement review, artifact review, tool validation, and human acceptance should be distinguishable stages rather than one opaque model response.
 
 ## 2. Research questions
 
@@ -25,6 +25,7 @@ The central hypothesis is that role separation can make AI-assisted verification
 3. Can requirement identifiers and provenance survive the full specification-to-verification workflow?
 4. Which disagreements predict genuine specification defects or missing test intent?
 5. Does the additional orchestration cost reduce or increase total human review time?
+6. How often does conservative abstention outperform partial semantic matching that silently drops qualifiers?
 
 ## 3. Proposed architecture
 
@@ -35,56 +36,66 @@ The full research architecture assigns bounded responsibilities.
 - **Assertion agent:** drafts safety and liveness properties with explicit assumptions.
 - **Adversarial reviewer:** searches for vacuity, missing antecedents, weak timing, conflicting assumptions, and unsupported signals.
 - **Coverage analyst:** identifies requirements without measurable evidence and proposes functional or assertion coverage.
-- **Orchestrator:** preserves identifiers, artifacts, review findings, confidence, approval state, and human escalation.
+- **Orchestrator:** preserves identifiers, artifacts, review findings, approval state, and human escalation.
+- **Deterministic verifier:** parses/elaborates assertions and executes simulation/formal checks against reference or generated traces.
 
-No role approves its own output. Human experts remain responsible for acceptance, simulation or formal execution, and sign-off.
+No model-backed role should approve its own output. Human experts remain responsible for acceptance and sign-off.
 
-## 4. Runnable reference prototype
+## 4. Runnable V4 reference prototype
 
-The repository prototype implements a compact slice of this architecture in [verification_copilot.py](../src/assurance_portfolio/verification_copilot.py).
+The repository prototype implements a deterministic slice of this architecture in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py). It is intentionally not described as a deployed multi-agent LLM system.
 
 For each requirement, it:
 
 1. normalizes whitespace,
 2. preserves the requirement identifier,
-3. produces a draft assertion placeholder,
-4. generates nominal, boundary, and adversarial scenario labels,
-5. creates a requirement-linked coverage goal, and
-6. performs a separate ambiguity review.
+3. performs independent requirement-quality review,
+4. attempts translation using a small explicit grammar,
+5. labels generation `SUPPORTED` only when the complete normalized requirement matches,
+6. records the matched pattern and extracted translation parameters,
+7. generates pattern-specific scenarios and a requirement-linked coverage goal,
+8. performs a separate artifact review, and
+9. combines findings into a traceable `VerificationArtifact`.
 
-The review currently flags:
+Supported grammar families currently cover bounded response, alternate no-later-than phrasing, conditional bounded response, prohibition, immediate implication, and persistence-until-release.
 
-- absence of normative terms such as “must,” “shall,” “never,” or “within,”
-- a non-numeric timing bound following “within,” and
-- ambiguous adjectives including “appropriate,” “quickly,” and “secure.”
+A requirement such as:
 
-The generated assertion is explicitly a draft string, not a claim of syntactic or semantic correctness. The prototype does not parse RTL, invoke a simulator or formal engine, test vacuity, or measure design coverage.
+```text
+grant shall assert within 4 cycles after request unless reset or abort
+```
 
-## 5. Traceability model
+is deliberately `FALLBACK`, even though its prefix resembles a supported bounded-response requirement. This prevents unsupported trailing semantics from being silently discarded.
 
-Every output carries the original requirement identifier. This creates a minimal chain:
+## 5. Assertion and scenario semantics
 
-**Requirement -> Draft assertion -> Scenarios -> Coverage goal -> Review findings**
+Generated assertions remain drafts. The generator currently assumes `@(posedge clk)` and does not infer clock domains, reset semantics, hierarchy, signal width, unknown-state behavior, or design-specific assumptions. Those limitations are explicit.
 
-A production system should extend this into a typed provenance graph containing source-document locations, model and prompt versions, retrieved evidence, tool results, reviewer identity, unresolved disagreement, and approval state. Traceability should be evaluated for correctness, not merely for the presence of identifiers.
+V4 makes scenario generation pattern-aware rather than reusing a generic nominal/boundary/violation template. For example, a prohibition requirement generates scenarios for the safe hold condition and prohibited assertion; a bounded response generates early, exact-boundary, and late/missing response cases.
+
+This improves traceability, but it still does not establish assertion correctness.
 
 ## 6. Prototype evidence
 
-The [example requirements](../examples/requirements.json) include:
+The repository regression suite now checks:
 
-- a human-approval requirement,
-- a numeric shutdown-timing requirement, and
-- a deliberately weak statement that the system should respond “quickly and securely.”
+- successful complete matching for supported grammars,
+- fail-safe fallback for a partial semantic match with an unsupported trailing clause,
+- pattern-specific scenarios and coverage goals,
+- generation provenance,
+- independent artifact-review findings, and
+- deterministic fallback behavior.
 
-The repository test suite includes a unit test confirming that the weak requirement produces both a missing-normative-term finding and an ambiguous-adjective finding. This is implementation validation only. It is not an empirical comparison of agent architectures and does not establish assertion correctness, requirement recall, or productivity improvement.
+These tests validate implementation behavior only. They do not establish semantic SVA correctness, requirement recall, productivity improvement, or superiority of role-separated agents.
 
-## 7. Proposed evaluation
+## 7. Proposed controlled evaluation
 
-A controlled study should compare:
+Compare:
 
-1. **Single-agent baseline:** one model produces and reviews all artifacts.
-2. **Unconstrained multi-agent baseline:** multiple agents collaborate without independence rules.
-3. **Role-separated workflow:** proposal and review roles are distinct, with human escalation.
+1. **Single-agent baseline:** one model produces and reviews artifacts.
+2. **Unconstrained multi-agent baseline:** multiple model calls collaborate without independence rules.
+3. **Role-separated workflow:** bounded generator/reviewer roles plus deterministic verification-tool feedback and human escalation.
+4. **Deterministic baseline:** the current V4 grammar-driven implementation.
 
 ### Dataset
 
@@ -93,7 +104,7 @@ Use compact public RTL blocks or protocols with:
 - independently authored reference requirements,
 - reference assertions and expected traces,
 - seeded specification and RTL defects,
-- precise and deliberately ambiguous requirement variants, and
+- precise and deliberately ambiguous/paraphrased requirement variants,
 - reset, timing, concurrency, and error-handling cases.
 
 ### Metrics
@@ -105,32 +116,38 @@ Use compact public RTL blocks or protocols with:
 - seeded-defect detection,
 - false-positive rate,
 - functional and assertion coverage,
+- fallback/abstention calibration,
 - provenance completeness,
-- calibrated abstention,
-- human review time, and
-- inference and tool-execution cost.
-
-Repeated trials should vary model, prompt, seed, and orchestration configuration. Reviewers should be blinded to workflow condition where practical.
+- human review time,
+- inference/tool-execution cost.
 
 ## 8. Threats to validity
 
-Multiple agents may share model-level blind spots and create correlated errors. Role labels alone do not guarantee independence. Automated judges may reward plausible wording rather than executable correctness. A small public benchmark may not represent proprietary SoC complexity. Seeded defects may be easier to detect than organic specification failures. Human-review time can also shift rather than decrease.
+Multiple agents may share model-level blind spots and create correlated errors. Role labels alone do not guarantee independence. Regex/grammar baselines can reject valid paraphrases or overfit curated examples. Automated judges can reward plausible syntax without semantic validity. Public blocks do not represent full SoC complexity. Seeded defects may differ from organic specification failures.
 
-These risks motivate tool-grounded scoring with parsers, simulators, formal engines, mutation testing, and independently authored reference artifacts.
+These risks motivate parser/simulator/formal scoring, mutation testing, independently authored reference artifacts, blinded human review, and explicit error analysis.
 
 ## 9. Related work
 
-AssertLLM processes specification documents and generates assertions from natural language and waveform information, demonstrating the promise and difficulty of document-level assertion generation. VERT and AssertionBench contribute datasets for evaluating LLM-generated assertions. CoverAssert adds a coverage-guided feedback loop and reports that single-pass assertion generation can miss functional intent. The Accellera UVM standard provides the broader reusable verification methodology into which a future copilot must integrate.
+AssertLLM processes specification documents and generates assertions from natural language and waveform information, demonstrating both the promise and difficulty of document-level assertion generation. VERT and AssertionBench contribute datasets for evaluating LLM-generated assertions. CoverAssert adds a coverage-guided feedback loop and reports that single-pass generation can miss functional intent. The Accellera UVM standard provides the broader reusable verification methodology into which a future copilot must integrate.
 
-The contribution proposed here is complementary: explicit proposer-reviewer separation, preserved requirement provenance, disagreement as an escalation signal, and evaluation of the whole requirements-to-evidence workflow.
+The proposed contribution is complementary: explicit proposer-reviewer separation, preserved requirement provenance, conservative fallback on unsupported semantics, deterministic tool verification, and evaluation of the whole requirements-to-evidence workflow.
 
-## 10. Limitations and next steps
+## 10. Limitations and next milestone
 
-The current prototype is dependency-free demonstration code. It does not contain multiple model-backed agents, generate correct SVA, connect to UVM, or execute EDA tools. The next implementation milestone should add a typed requirement schema, parser-backed SVA checks, a small open RTL target, seeded defects, provenance records, and a baseline comparison.
+The current prototype contains no model calls, RAG, agent framework, UVM integration, RTL parser, simulator, or formal engine. It is the deterministic baseline against which those additions should be evaluated.
+
+The next milestone is therefore not another regex extension. It is:
+
+1. model-backed generator and reviewer adapters,
+2. parser/elaboration validation for generated SVA,
+3. a small public RTL target with seeded defects and reference properties,
+4. simulation/formal feedback into the workflow,
+5. controlled single-agent versus role-separated evaluation.
 
 ## 11. Conclusion
 
-A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose uncertainty, separate proposal from approval, and produce evidence that engineers can inspect. The current prototype demonstrates the smallest auditable version of that idea and defines a path toward controlled evaluation.
+A useful verification copilot must do more than generate plausible code. It must preserve design intent, expose unsupported semantics, separate proposal from review, and produce executable evidence that engineers can inspect. V4 strengthens the deterministic baseline by making supported parsing fail-safe and scenario generation pattern-aware; the research value now depends on connecting model-backed roles to actual verification tools and measuring outcomes.
 
 ## References
 
