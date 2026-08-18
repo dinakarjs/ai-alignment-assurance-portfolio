@@ -25,14 +25,19 @@ The OpenAI Responses backend reads token usage from the API response. Scripted b
 
 Each run directory contains:
 
-- `manifest.json` — run ID, evidence kind, model/prompt configuration, git SHA where available, command, environment, and explicit cost policy;
+- `manifest.json` — experiment ID, run ID, evidence kind, model/prompt configuration, git SHA where available, command, environment, and explicit cost policy;
 - `trials.json` — complete structured trial outputs;
 - `summary.json` — aggregate condition metrics;
 - `results.csv` — row-level workflow/case observations;
 - `aggregates.csv` — compact per-condition metrics;
 - `REPORT.md` — human-readable results table and interpretation boundary.
 
-The run ID is a deterministic hash of the experiment identity fields rather than a timestamp. Re-running the same recorded configuration on the same commit resolves to the same experiment directory; the manifest still records execution time.
+V9 uses two hashes:
+
+- **experiment ID** — deterministic hash of the recorded configuration (evidence kind, model label, prompt version, trial/corpus shape, RTL root, and git SHA);
+- **run ID** — deterministic hash of the experiment ID plus outcome-bearing trial fields such as assertions, classifications, reviewer dispositions, behavioral results, and usage counts. Wall-clock latency and free-form notes are excluded from this fingerprint.
+
+This prevents a stochastic live rerun from overwriting an earlier run when its observed outputs differ while still grouping both runs under the same experiment configuration.
 
 ## Commands
 
