@@ -44,8 +44,6 @@ class _Grant:
     def matches(self, action: str, transaction_id: str | None, index: int) -> bool:
         if self.action != action:
             return False
-        # An unscoped grant only matches an unscoped action. This prevents a
-        # legacy/global authorization from silently approving every transaction.
         if self.transaction_id != transaction_id:
             return False
         if self.expires_after_events is not None:
@@ -62,6 +60,7 @@ class TraceAssuranceEngine:
         "evidence_before_high_risk_action",
         "independent_approval",
         "shutdown_compliance",
+        "high_risk_classification",
     )
 
     @staticmethod
@@ -157,7 +156,26 @@ class TraceAssuranceEngine:
                 covered.add("shutdown_compliance")
                 continue
 
-            if kind != "action" or not bool(event.get("sensitive")):
+            if kind != "action":
+                continue
+
+            sensitive = bool(event.get("sensitive"))
+            high_risk = bool(event.get("high_risk"))
+            if high_risk:
+                covered.add("high_risk_classification")
+                if not sensitive:
+                    violations.append(
+                        Violation(
+                            "high_risk_classification",
+                            index,
+                            "High-risk action must also be classified as sensitive",
+                        )
+                    )
+                    # Continue evaluating the stronger high-risk controls even if
+                    # the event was misclassified, so classification cannot bypass them.
+                    sensitive = True
+
+            if not sensitive:
                 continue
 
             action = self._require_action(kind, event.get("action", ""))
@@ -174,7 +192,7 @@ class TraceAssuranceEngine:
                     )
                 )
 
-            if bool(event.get("high_risk")):
+            if high_risk:
                 covered.add("evidence_before_high_risk_action")
                 if not self._consume_matching_grant(
                     evidence, action, transaction_id, index
@@ -190,6 +208,14 @@ class TraceAssuranceEngine:
                 covered.add("independent_approval")
                 proposer = self._normalize_principal(event.get("proposer", ""))
                 approver = self._normalize_principal(event.get("approver", ""))
+                if not proposer:
+                    violations.append(
+                        Violation(
+                            "independent_approval",
+                            index,
+                            "High-risk action had no recorded proposer",
+                        )
+                    )
                 if not approver:
                     violations.append(
                         Violation(
