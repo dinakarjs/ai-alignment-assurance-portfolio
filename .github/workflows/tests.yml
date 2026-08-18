@@ -43,8 +43,8 @@ jobs:
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl anchor --external-reference ci-local-anchor
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl verify
           assurance-trace-audit self-test
-          assurance-trace-audit field-issue examples/field_issue.json
-          test "$(wc -l < /tmp/trace-audit.jsonl)" -eq 3
+          assurance-trace-audit --audit-log /tmp/trace-audit.jsonl field-issue examples/field_issue.json
+          test "$(wc -l < /tmp/trace-audit.jsonl)" -eq 4
 
   verilator-validation:
     runs-on: ubuntu-latest
