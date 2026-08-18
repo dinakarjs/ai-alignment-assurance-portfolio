@@ -1,0 +1,111 @@
+name: rtl-regressions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/rtl/**"
+      - "src/assurance_portfolio/sva_validation.py"
+      - "src/assurance_portfolio/rtl_benchmark.py"
+      - "src/assurance_portfolio/controlled_evaluation.py"
+      - "src/assurance_portfolio/corpus_benchmark.py"
+      - "src/assurance_portfolio/corpus_evaluation.py"
+      - "src/assurance_portfolio/experiment_artifacts.py"
+      - "src/assurance_portfolio/verification_copilot.py"
+      - "src/assurance_portfolio/agentic_verification.py"
+      - "src/assurance_portfolio/cli.py"
+      - "tests/test_sva_validation.py"
+      - "tests/test_rtl_benchmark.py"
+      - "tests/test_controlled_evaluation.py"
+      - "tests/test_corpus_benchmark.py"
+      - "tests/test_corpus_evaluation.py"
+      - ".github/workflows/rtl-regressions.yml"
+  pull_request:
+    paths:
+      - "benchmarks/rtl/**"
+      - "src/assurance_portfolio/sva_validation.py"
+      - "src/assurance_portfolio/rtl_benchmark.py"
+      - "src/assurance_portfolio/controlled_evaluation.py"
+      - "src/assurance_portfolio/corpus_benchmark.py"
+      - "src/assurance_portfolio/corpus_evaluation.py"
+      - "src/assurance_portfolio/experiment_artifacts.py"
+      - "src/assurance_portfolio/verification_copilot.py"
+      - "src/assurance_portfolio/agentic_verification.py"
+      - "src/assurance_portfolio/cli.py"
+      - "tests/test_sva_validation.py"
+      - "tests/test_rtl_benchmark.py"
+      - "tests/test_controlled_evaluation.py"
+      - "tests/test_corpus_benchmark.py"
+      - "tests/test_corpus_evaluation.py"
+      - ".github/workflows/rtl-regressions.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rtl-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python package
+        run: python -m pip install -e .
+      - name: Install Verilator and Icarus Verilog
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if command -v verilator >/dev/null 2>&1 && command -v iverilog >/dev/null 2>&1; then
+            verilator --version
+            iverilog -V
+            exit 0
+          fi
+
+          # GitHub-hosted Ubuntu runners can point apt at an Azure mirror that
+          # intermittently stalls. Prefer canonical Ubuntu HTTPS endpoints for
+          # this small deterministic dependency set.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/apt-mirrors.txt || true
+          fi
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list.d/ubuntu.sources || true
+            sudo sed -i 's#http://archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list.d/ubuntu.sources || true
+            sudo sed -i 's#http://security.ubuntu.com/ubuntu#https://security.ubuntu.com/ubuntu#g' /etc/apt/sources.list.d/ubuntu.sources || true
+          fi
+
+          sudo apt-get update \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=15 \
+            -o Acquire::https::Timeout=15
+          sudo apt-get install -y --no-install-recommends verilator iverilog
+
+          verilator --version
+          iverilog -V
+      - name: Validate assertion with Verilator
+        run: |
+          python - <<'PY'
+          from assurance_portfolio.sva_validation import VerilatorSVAValidator, ValidationStatus
+          result = VerilatorSVAValidator().validate(
+              "assert property (@(posedge clk) reset |-> !grant);"
+          )
+          print(result)
+          if result.status is not ValidationStatus.VALID:
+              raise SystemExit(1)
+          PY
+      - name: Prove seeded RTL mutation is detected
+        run: assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
+      - name: Exercise V7 four-condition comparison
+        run: assurance-demo controlled-eval --rtl-root benchmarks/rtl
+      - name: Exercise V8 multi-family repeated corpus
+        run: assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 2
+      - name: Exercise V9 experiment artifact bundle
+        run: |
+          assurance-demo corpus-eval --rtl-root benchmarks/rtl --trials 1 --output-root /tmp/assurance-experiments
+          test -f /tmp/assurance-experiments/*/manifest.json
+          test -f /tmp/assurance-experiments/*/results.csv
+          test -f /tmp/assurance-experiments/*/aggregates.csv
+          test -f /tmp/assurance-experiments/*/REPORT.md
