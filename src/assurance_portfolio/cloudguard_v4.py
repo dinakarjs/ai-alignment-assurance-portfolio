@@ -19,13 +19,18 @@ from enum import Enum
 import hashlib
 import json
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+import re
+from typing import Mapping, Sequence
 
 
 CLOUDGUARD_V4_VERSION = "cloudguard/4.0.0"
 THREAT_SCHEMA_VERSION = "cloudguard-threat/1.0.0"
 DETECTION_MANIFEST_VERSION = "cloudguard-detections/4.0.0"
 RESPONSE_POLICY_VERSION = "cloudguard-response/1.0.0"
+
+_MAX_EMERGENCY_CONTAINMENT_MINUTES = 60
+_SEVERITIES = frozenset({"INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"})
+_SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
 def _canonical_json(value: object) -> str:
@@ -228,12 +233,30 @@ class ResponseRequest:
     threat_ids: tuple[str, ...] = ()
     emergency: bool = False
 
+    @property
+    def request_digest(self) -> str:
+        return _sha256_object(
+            {
+                "incident_id": self.incident_id,
+                "action": self.action,
+                "target": self.target,
+                "requested_by": self.requested_by,
+                "impact_tier": self.impact_tier.value,
+                "parameters": dict(self.parameters),
+                "evidence_ids": tuple(self.evidence_ids),
+                "threat_ids": tuple(self.threat_ids),
+                "emergency": self.emergency,
+            }
+        )
+
 
 @dataclass(frozen=True)
 class HumanReview:
     review_id: str
     incident_id: str
     action: str
+    target: str
+    request_digest: str
     reviewer: str
     reviewer_trust_domain: str
     disposition: HumanDisposition
@@ -285,6 +308,20 @@ class FeedbackAnalysis:
     proposed_updates: tuple[str, ...]
 
 
+def _validate_threat_record(record: ThreatRecord) -> None:
+    if not record.threat_id.strip() or not record.name.strip():
+        raise ValueError("threat record requires non-empty threat_id and name")
+    if not _SEMVER.fullmatch(record.version):
+        raise ValueError("threat version must be numeric semantic version x.y.z")
+    severity = record.severity.strip().upper()
+    if severity not in _SEVERITIES:
+        raise ValueError(f"invalid threat severity {record.severity!r}")
+    if not record.source.source_id.strip() or not record.source.name.strip():
+        raise ValueError("threat source requires source_id and name")
+    if record.confidence is not None and not 0 <= record.confidence <= 100:
+        raise ValueError("source confidence must be between 0 and 100")
+
+
 class CloudGuardPolicyEngine:
     """Deterministic response policy independent of model confidence."""
 
@@ -304,7 +341,11 @@ class CloudGuardPolicyEngine:
                 (f"missing required evidence: {sorted(missing)}",),
                 0,
             )
-        unverified = [item.evidence_id for item in evidence if item.evidence_id in required and not item.verified]
+        unverified = [
+            item.evidence_id
+            for item in evidence
+            if item.evidence_id in required and not item.verified
+        ]
         if unverified:
             return ResponsePolicyResult(
                 ResponseDecision.ESCALATE,
@@ -317,36 +358,96 @@ class CloudGuardPolicyEngine:
 
         if request.impact_tier is ResponseImpactTier.TEMPORARY_CONTAINMENT:
             if request.emergency:
+                expiry = request.parameters.get("expires_after_minutes")
+                if not isinstance(expiry, (int, float)) or isinstance(expiry, bool):
+                    return ResponsePolicyResult(
+                        ResponseDecision.BLOCK,
+                        ("emergency containment requires numeric expires_after_minutes",),
+                        0,
+                    )
+                if not 1 <= float(expiry) <= _MAX_EMERGENCY_CONTAINMENT_MINUTES:
+                    return ResponsePolicyResult(
+                        ResponseDecision.BLOCK,
+                        (
+                            "emergency containment expiry must be between 1 and "
+                            f"{_MAX_EMERGENCY_CONTAINMENT_MINUTES} minutes"
+                        ,),
+                        0,
+                    )
                 return ResponsePolicyResult(
                     ResponseDecision.ALLOW,
                     ("bounded emergency containment under pre-authorized playbook",),
                     0,
                 )
             if review is None:
-                return ResponsePolicyResult(ResponseDecision.ESCALATE, ("containment requires policy/HIL review",), 1)
+                return ResponsePolicyResult(
+                    ResponseDecision.ESCALATE,
+                    ("containment requires policy/HIL review",),
+                    1,
+                )
 
         required_reviewers = 1
         if request.impact_tier >= ResponseImpactTier.DESTRUCTIVE_OR_BUSINESS_CRITICAL:
             required_reviewers = 2
         if request.impact_tier >= ResponseImpactTier.ACCOUNT_OR_PRIVILEGE_CHANGE and review is None:
-            return ResponsePolicyResult(ResponseDecision.ESCALATE, ("high-impact response requires human approval",), required_reviewers)
+            return ResponsePolicyResult(
+                ResponseDecision.ESCALATE,
+                ("high-impact response requires human approval",),
+                required_reviewers,
+            )
 
         if review is not None:
-            if review.incident_id != request.incident_id or _norm(review.action) != _norm(request.action):
-                return ResponsePolicyResult(ResponseDecision.BLOCK, ("human review is not bound to requested incident/action",), required_reviewers)
-            if review.disposition not in {HumanDisposition.APPROVE, HumanDisposition.EXCEPTION_APPROVED}:
-                return ResponsePolicyResult(ResponseDecision.BLOCK, (f"human disposition is {review.disposition.value}",), required_reviewers)
+            if (
+                review.incident_id != request.incident_id
+                or _norm(review.action) != _norm(request.action)
+                or review.target != request.target
+                or review.request_digest != request.request_digest
+            ):
+                return ResponsePolicyResult(
+                    ResponseDecision.BLOCK,
+                    ("human review is not bound to exact requested action/target/parameters",),
+                    required_reviewers,
+                )
+            if review.disposition not in {
+                HumanDisposition.APPROVE,
+                HumanDisposition.EXCEPTION_APPROVED,
+            }:
+                return ResponsePolicyResult(
+                    ResponseDecision.BLOCK,
+                    (f"human disposition is {review.disposition.value}",),
+                    required_reviewers,
+                )
             if not review.rationale.strip():
-                return ResponsePolicyResult(ResponseDecision.BLOCK, ("human review requires rationale",), required_reviewers)
+                return ResponsePolicyResult(
+                    ResponseDecision.BLOCK,
+                    ("human review requires rationale",),
+                    required_reviewers,
+                )
             if required_reviewers == 2:
                 if not review.second_reviewer or not review.second_reviewer_trust_domain:
-                    return ResponsePolicyResult(ResponseDecision.ESCALATE, ("dual independent approval required",), 2)
+                    return ResponsePolicyResult(
+                        ResponseDecision.ESCALATE,
+                        ("dual independent approval required",),
+                        2,
+                    )
                 if _norm(review.reviewer) == _norm(review.second_reviewer):
-                    return ResponsePolicyResult(ResponseDecision.BLOCK, ("self/duplicate dual approval forbidden",), 2)
+                    return ResponsePolicyResult(
+                        ResponseDecision.BLOCK,
+                        ("self/duplicate dual approval forbidden",),
+                        2,
+                    )
                 if _norm(review.reviewer_trust_domain) == _norm(review.second_reviewer_trust_domain):
-                    return ResponsePolicyResult(ResponseDecision.ESCALATE, ("dual approval requires independent trust domains",), 2)
+                    return ResponsePolicyResult(
+                        ResponseDecision.ESCALATE,
+                        ("dual approval requires independent trust domains",),
+                        2,
+                    )
 
-        return ResponsePolicyResult(ResponseDecision.ALLOW, ("response satisfies deterministic policy and oversight",), required_reviewers)
+        return ResponsePolicyResult(
+            ResponseDecision.ALLOW,
+            ("response satisfies deterministic policy and oversight",),
+            required_reviewers,
+        )
 
 
 class ThreatKnowledgeRegistry:
@@ -360,6 +461,7 @@ class ThreatKnowledgeRegistry:
     def propose(self, proposal: ThreatUpdateProposal) -> None:
         if not proposal.proposed_by.strip() or not proposal.rationale.strip():
             raise ValueError("threat update requires proposer and rationale")
+        _validate_threat_record(proposal.record)
         key = (proposal.record.threat_id, proposal.record.version)
         if key in self._records:
             raise ValueError("threat version is immutable and already exists")
@@ -376,12 +478,17 @@ class ThreatKnowledgeRegistry:
             raise PermissionError("only APPROVE review can activate threat update")
         if _norm(review.reviewer) == _norm(proposal.proposed_by):
             raise PermissionError("proposer cannot approve own threat update")
-        if proposal.record.source.trust is ThreatSourceTrust.UNTRUSTED_DISCOVERY:
-            if review.second_reviewer is None:
-                raise PermissionError("untrusted threat source requires second independent reviewer")
+        if (
+            proposal.record.source.trust is ThreatSourceTrust.UNTRUSTED_DISCOVERY
+            and review.second_reviewer is None
+        ):
+            raise PermissionError("untrusted threat source requires second independent reviewer")
         if proposal.weakens_existing_control and review.second_reviewer is None:
             raise PermissionError("control weakening requires second independent reviewer")
-        if review.second_reviewer and _norm(review.second_reviewer) in {_norm(proposal.proposed_by), _norm(review.reviewer)}:
+        if review.second_reviewer and _norm(review.second_reviewer) in {
+            _norm(proposal.proposed_by),
+            _norm(review.reviewer),
+        }:
             raise PermissionError("threat update reviewers must be independent principals")
         if review.regression is None or not review.regression.passed:
             raise PermissionError("activation requires passing regression evidence")
@@ -405,7 +512,14 @@ class ThreatKnowledgeRegistry:
         except KeyError as exc:
             raise KeyError(f"unknown threat {threat_id}/{version}") from exc
 
-    def rollback(self, *, threat_id: str, version: str, authorized_by: str, rationale: str) -> ActiveThreatVersion:
+    def rollback(
+        self,
+        *,
+        threat_id: str,
+        version: str,
+        authorized_by: str,
+        rationale: str,
+    ) -> ActiveThreatVersion:
         if not authorized_by.strip() or not rationale.strip():
             raise ValueError("rollback requires authorized_by and rationale")
         record = self.get(threat_id, version)
@@ -481,20 +595,60 @@ class CloudGuardFeedbackEngine:
 
     def analyze(self, issue: FieldIssue) -> FeedbackAnalysis:
         if issue.false_positive:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.FALSE_POSITIVE, "benign activity was treated as malicious", ("review detector threshold/context", "add benign regression"))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.FALSE_POSITIVE,
+                "benign activity was treated as malicious",
+                ("review detector threshold/context", "add benign regression"),
+            )
         if not issue.telemetry_complete:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.TELEMETRY_GAP, "required telemetry was missing or incomplete", ("propose telemetry update", "add missing-telemetry regression"))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.TELEMETRY_GAP,
+                "required telemetry was missing or incomplete",
+                ("propose telemetry update", "add missing-telemetry regression"),
+            )
         if not issue.threat_known:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.THREAT_DB_GAP, "field threat was absent from active threat knowledge", ("propose threat-db update", "map TTPs and observables"))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.THREAT_DB_GAP,
+                "field threat was absent from active threat knowledge",
+                ("propose threat-db update", "map TTPs and observables"),
+            )
         if not issue.detector_fired:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.DETECTION_GAP, "known threat escaped active detection", ("propose detector update", "add attack/evasion regressions"))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.DETECTION_GAP,
+                "known threat escaped active detection",
+                ("propose detector update", "add attack/evasion regressions"),
+            )
         if issue.confirmed_unsafe and issue.detected_before_effect and not issue.policy_blocked:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.POLICY_GAP, "unsafe behavior was detected but policy did not prevent effect", ("propose response-policy update", "add policy regression"))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.POLICY_GAP,
+                "unsafe behavior was detected but policy did not prevent effect",
+                ("propose response-policy update", "add policy regression"),
+            )
         if issue.confirmed_unsafe and not issue.response_effective:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.RESPONSE_GAP, "response did not contain the confirmed threat", ("propose playbook update", "add response-outcome regression"))
-        if issue.recovery_effective is False and issue.response_effective:
-            return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.RECOVERY_GAP, "containment succeeded but recovery was ineffective", ("propose recovery-playbook update", "add recovery regression"))
-        return FeedbackAnalysis(issue.field_issue_id, FeedbackGap.REVIEW_REQUIRED, "deterministic evidence is insufficient for a narrower root cause", ("expert review",))
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.RESPONSE_GAP,
+                "response did not contain the confirmed threat",
+                ("propose playbook update", "add response-outcome regression"),
+            )
+        if not issue.recovery_effective and issue.response_effective:
+            return FeedbackAnalysis(
+                issue.field_issue_id,
+                FeedbackGap.RECOVERY_GAP,
+                "containment succeeded but recovery was ineffective",
+                ("propose recovery-playbook update", "add recovery regression"),
+            )
+        return FeedbackAnalysis(
+            issue.field_issue_id,
+            FeedbackGap.REVIEW_REQUIRED,
+            "deterministic evidence is insufficient for a narrower root cause",
+            ("expert review",),
+        )
 
 
 def detection_audit_payload(
