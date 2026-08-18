@@ -7,7 +7,10 @@ name = "ai-alignment-assurance-portfolio"
 version = "0.11.0"
 description = "Runnable prototypes for verification-driven AI assurance and agentic pre-silicon verification"
 requires-python = ">=3.10"
-dependencies = ["cryptography>=42.0.0"]
+dependencies = [
+  "cryptography>=42.0.0",
+  "jsonschema>=4.23.0"
+]
 
 [project.optional-dependencies]
 agentic = ["openai>=1.66.0"]
