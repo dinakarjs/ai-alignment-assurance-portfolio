@@ -1,11 +1,11 @@
 # Multi-Agent Verification Copilot
 
-**Status:** Applied research prototype with deterministic baseline, optional model-backed roles, behavioral RTL mutation proof, and repeated multi-family evaluation  
-**Theme:** AI-assisted verification with auditable role separation, tool-grounded acceptance, and measured behavioral outcomes
+**Status:** Applied research prototype with deterministic baseline, optional model-backed roles, behavioral RTL mutation proof, repeated multi-family evaluation, and reproducible experiment artifacts  
+**Theme:** AI-assisted verification with auditable role separation, tool-grounded acceptance, measured behavioral outcomes, and traceable experiment evidence
 
 ## Motivation
 
-Complex verification work requires specification analysis, assertion design, scenario generation, coverage planning, failure triage, and sign-off evidence. A single assistant can blur these responsibilities and amplify unchecked mistakes. This project separates generation, adversarial review, deterministic verification, behavioral execution, and human acceptance.
+Complex verification work requires specification analysis, assertion design, scenario generation, coverage planning, failure triage, and sign-off evidence. A single assistant can blur these responsibilities and amplify unchecked mistakes. This project separates generation, adversarial review, deterministic verification, behavioral execution, human acceptance, and experiment reporting.
 
 ## Implemented architecture
 
@@ -15,7 +15,7 @@ Complex verification work requires specification analysis, assertion design, sce
 
 ### Model-backed path
 
-[`agentic_verification.py`](../src/assurance_portfolio/agentic_verification.py) adds a model-backed generator, separate adversarial reviewer, strict JSON contracts, reviewer outcomes `ACCEPT_FOR_TOOL_CHECK` / `REVISE` / `ABSTAIN`, recorded backend identity, and deterministic validation as an acceptance gate.
+[`agentic_verification.py`](../src/assurance_portfolio/agentic_verification.py) adds a model-backed generator, separate adversarial reviewer, strict JSON contracts, reviewer outcomes `ACCEPT_FOR_TOOL_CHECK` / `REVISE` / `ABSTAIN`, recorded backend identity, deterministic validation as an acceptance gate, and V9 token/request telemetry when the backend exposes usage.
 
 The repository includes an OpenAI Responses API backend for live use and scripted backends for reproducible tests. Distinct calls provide workflow separation but do not guarantee statistical independence when the same model family is used.
 
@@ -25,17 +25,17 @@ The repository includes an OpenAI Responses API backend for live use and scripte
 
 [`rtl_behavioral.py`](../src/assurance_portfolio/rtl_behavioral.py) provides the original request/grant behavioral proof with Icarus Verilog.
 
-V8 broadens behavioral evaluation through [`corpus_benchmark.py`](../src/assurance_portfolio/corpus_benchmark.py) to three requirement families:
+The expanded corpus in [`corpus_benchmark.py`](../src/assurance_portfolio/corpus_benchmark.py) covers three requirement families:
 
 - bounded response: request → grant within four cycles,
 - prohibition: grant must remain low during reset,
 - immediate implication: request high implies busy high.
 
-Each family has a known-good RTL implementation and one labelled mutation. A compile/tool failure never counts as successful mutation detection.
+Each family has known-good RTL and a labelled mutation. A compile/tool failure never counts as successful mutation detection.
 
 ## Four workflow conditions
 
-[`corpus_evaluation.py`](../src/assurance_portfolio/corpus_evaluation.py) evaluates the same RTL corpus under:
+[`corpus_evaluation.py`](../src/assurance_portfolio/corpus_evaluation.py) evaluates:
 
 1. deterministic grammar baseline,
 2. single-model generation,
@@ -46,7 +46,7 @@ Reviewer `REVISE` / `ABSTAIN` outcomes stop execution and are measured as escala
 
 ## Repeated-trial metrics
 
-V8 aggregates repeated trials using:
+The repeated evaluator aggregates:
 
 - generation-failure rate,
 - reviewer escalation rate,
@@ -54,35 +54,50 @@ V8 aggregates repeated trials using:
 - full-correct rate: good RTL passes and mutation is detected,
 - mutation-detection rate among executed cases,
 - false-positive rate on known-good RTL,
-- mean elapsed wall-clock time.
+- mean elapsed wall-clock time,
+- model request counts,
+- input/output/total tokens when provider telemetry is available.
 
-The scripted/offline corpus deliberately includes a too-strict bounded-response candidate and a reviewer escalation so the measurement system exercises both false-positive and abstention behavior. These scripted results validate evaluation plumbing, not model quality.
+Scripted/offline results validate evaluation plumbing, not model quality. Live observations use the same evaluator but remain limited by corpus size, trial count, model configuration, and benchmark design.
 
-Live trials use the same evaluator and record evidence kind, model label, and prompt version. Repeated live observations still do not justify a superiority claim without a larger independent corpus and expert review.
+## V9 reproducible experiment artifacts
+
+[`experiment_artifacts.py`](../src/assurance_portfolio/experiment_artifacts.py) writes a structured experiment bundle containing manifest metadata, raw trial JSON, row-level CSV, aggregate CSV, and a Markdown report.
+
+V9 distinguishes:
+
+- **experiment ID** — hash of the recorded configuration and code identity;
+- **run ID** — hash of experiment ID plus outcome-bearing trial fields.
+
+This lets multiple stochastic live runs share a configuration identity without overwriting one another when observed outputs differ.
+
+Dollar cost is deliberately not inferred from token counts because pricing is external, model-specific, and time-dependent. Historical usage can be joined to an explicitly dated pricing table later.
 
 ## Evidence layers
 
-The project deliberately keeps these claims separate:
+The project keeps these claims separate:
 
 1. deterministic reference output,
 2. model proposal/review,
 3. standalone assertion tool acceptance,
 4. behavioral RTL execution,
-5. repeated comparative evaluation.
+5. repeated comparative evaluation,
+6. reproducible experiment evidence.
 
 A candidate reaching `accepted_for_human_review=true` is not design sign-off. Behavioral success on this small corpus is not evidence of general SoC-scale correctness.
 
 ## Current trust boundary
 
-V8 demonstrates that the role contracts, acceptance gates, Verilator integration, multiple behavioral mutation pairs, and repeated four-condition evaluation run as software. It does **not** establish general natural-language-to-SVA correctness, model superiority, production EDA equivalence, or SoC-scale transfer.
+V9 demonstrates that model/tool/RTL experiments can be executed repeatedly and captured with code/configuration identity, behavioral outcomes, false positives, escalation, latency, request counts, and token telemetry when available. It does **not** establish general natural-language-to-SVA correctness, model superiority, production EDA equivalence, or SoC-scale transfer.
 
-The next defensible research step is a larger independently authored mutation corpus, repeated live-model trials with fixed configuration and usage telemetry, and blinded expert review of semantic correctness and engineering effort.
+The next defensible research step is a larger independently authored mutation corpus, repeated live-model trials with frozen configuration, a preregistered analysis plan, and blinded expert review of semantic correctness and engineering effort.
 
 ## Benchmark documentation
 
 - [V7 controlled evaluation](../benchmarks/CONTROLLED_EVALUATION.md)
 - [V8 multi-family corpus](../benchmarks/V8_CORPUS.md)
+- [V9 experiment evidence bundles](../benchmarks/V9_EXPERIMENT_ARTIFACTS.md)
 
 ## Working paper
 
-[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) documents the architecture and research framing. The V8 benchmark documentation is the authoritative description of the current expanded corpus and repeated-trial protocol.
+[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) documents the architecture and research framing. The benchmark documentation is the authoritative source for the current executable corpus and experiment protocol.
