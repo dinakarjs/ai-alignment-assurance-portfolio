@@ -1,0 +1,19 @@
+{
+  "artifacts": [
+    {"artifact_id": "input", "producer": "dataset", "labels": ["MODEL_INPUT"]},
+    {"artifact_id": "features", "producer": "module-a", "labels": ["MODEL_DERIVED"], "parents": ["input"]},
+    {"artifact_id": "prediction", "producer": "module-b", "labels": ["MODEL_DERIVED"], "parents": ["features"]},
+    {"artifact_id": "gold", "producer": "evaluator", "labels": ["GROUND_TRUTH", "EVALUATOR_ONLY"]}
+  ],
+  "accesses": [
+    {"principal": "module-a", "artifact_id": "input", "sequence": 1},
+    {"principal": "module-b", "artifact_id": "features", "sequence": 2},
+    {"principal": "evaluator", "artifact_id": "gold", "sequence": 5}
+  ],
+  "prediction_artifact_id": "prediction",
+  "prediction_commit_sequence": 4,
+  "ground_truth_release_sequence": 5,
+  "evaluator_principals": ["evaluator"],
+  "system_principals": ["module-a", "module-b"],
+  "scorer_principal": "evaluator"
+}
