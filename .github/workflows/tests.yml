@@ -36,6 +36,7 @@ jobs:
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl evaluate examples/agent_trace.json \
             --check-version agent-trace-checks/6.0.0 \
             --minimum-check-version agent-trace-checks/6.0.0 \
+            --check-manifest-file checks/agent-trace-checks/6.0.0.json \
             --schema-version agent-trace/2.0.0 \
             --schema-file schemas/agent-trace/2.0.0.json \
             --policy-version agent-trace-policy/2.0.0 \
