@@ -1,0 +1,34 @@
+{
+  "policy_version": "agent-trace-policy/2.0.0",
+  "minimum_check_version": "agent-trace-checks/6.0.0",
+  "high_risk": {
+    "require_sensitive_classification": true,
+    "require_verified_evidence": true,
+    "require_named_proposer_and_approver": true,
+    "require_independent_identity": true,
+    "require_independent_trust_domain": true
+  },
+  "authorization": {
+    "single_use": true,
+    "transaction_scoped": true,
+    "parameter_bound": true,
+    "untrusted_content_cannot_create_authority": true
+  },
+  "evidence": {
+    "accepted_trust_label": "VERIFIED_EVIDENCE",
+    "transaction_bound": true,
+    "action_bound_when_present": true
+  },
+  "governance": {
+    "machine_verdict_immutable": true,
+    "waivers_are_separate_records": true,
+    "security_sensitive_updates_require_two_independent_approvers": true,
+    "anti_rollback": true
+  },
+  "audit": {
+    "hash_chain": true,
+    "signed_attestation_supported": true,
+    "merkle_checkpoint_supported": true,
+    "external_anchor_recommended": true
+  }
+}
