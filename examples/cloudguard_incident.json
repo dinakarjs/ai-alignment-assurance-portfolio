@@ -1,0 +1,12 @@
+{
+  "incident_id": "CG-2026-001",
+  "account_id": "employee-1042",
+  "signals": {
+    "impossible_travel": 1.0,
+    "privilege_escalation": 1.0,
+    "failed_logins": 1.0,
+    "malicious_ip": 0.58,
+    "time_anomaly": 1.0
+  }
+}
+
