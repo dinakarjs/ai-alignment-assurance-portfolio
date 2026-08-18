@@ -32,6 +32,9 @@ jobs:
       - name: Exercise Agent Trace Assurance V6 controls
         run: |
           assurance-runtime examples/runtime_assurance_request.json
+          assurance-integrity evaluation examples/evaluation_integrity_clean.json
+          assurance-integrity cicd examples/cicd_integrity_clean.json
+          assurance-integrity attribution --baseline 0.50 --full 0.85 --isolated 0.55
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl check-update examples/check_update.json
           assurance-trace-audit --audit-log /tmp/trace-audit.jsonl evaluate examples/agent_trace.json \
             --check-version agent-trace-checks/6.1.0 \
