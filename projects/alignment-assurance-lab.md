@@ -1,6 +1,6 @@
 # Alignment Assurance Lab
 
-**Status:** Research concept and prototype roadmap  
+**Status:** Research concept with deterministic trace-monitor prototype  
 **Theme:** Verification-driven evaluation of agentic AI systems
 
 ## Motivation
@@ -17,38 +17,52 @@ Translate practices from pre-silicon verification into AI assurance:
 - **Assertions and monitors:** detect violations during execution rather than relying only on final-answer grading.
 - **Counterexample-guided refinement:** turn failures into minimal reproducible traces and stronger tests.
 
+## Runnable V4 baseline
+
+The current [`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py) monitor checks a small explicit policy set over ordered traces:
+
+- authorization before sensitive actions,
+- evidence before high-risk actions,
+- high-risk actions must also be classified sensitive,
+- proposer and approver identities must both be present and independent,
+- shutdown permits only audit/status events afterward.
+
+Authorization and evidence grants are normalized, may be transaction-scoped, may expire after a bounded number of events, and are consumed on use. Unscoped grants do not silently approve scoped transactions.
+
+The result is **PASS**, **FAIL**, or **INCONCLUSIVE**. `INCONCLUSIVE` means no violation was observed but at least one required property was not exercised. The current metric is best described as **property-exercise coverage**, not full functional/assertion/vacuity coverage.
+
+## Important trust boundary
+
+The monitor assumes the event trace is trustworthy. It does not yet prove that an authorization actor has policy authority, assess evidence-source quality, bind grants to all action parameters, or cryptographically protect trace integrity. These are explicit next-stage requirements rather than hidden assumptions.
+
 ## Research questions
 
 1. Which agent-safety claims can be represented as observable temporal properties?
 2. Can coverage metrics expose blind spots that benchmark averages hide?
 3. How well do properties generalize across models, scaffolds, and tool environments?
 4. Can counterexample traces improve training, monitoring, or deployment gates?
+5. How should authorization authority, evidence provenance, and trace integrity be represented without making the monitor itself an unverified trust root?
 
-## First test
+## First controlled evaluation
 
-Build a small tool-using agent with a simulated filesystem, messaging tool, and delegated sub-agent. Define properties for authorization boundaries, irreversible actions, evidence requirements, and shutdown compliance. Generate adversarial task sequences, record traces, and compare assertion/coverage signals with conventional outcome-based evaluation.
+Build a small tool-using agent with simulated filesystem, messaging, and delegation tools. Define properties for authorization boundaries, irreversible actions, evidence requirements, and shutdown compliance. Generate benign and adversarial task sequences, record traces, and compare:
 
-## Relevance to recursive self-improvement
+1. final-outcome grading,
+2. trace monitoring only,
+3. trace monitoring plus property-exercise coverage, and
+4. trace monitoring with runtime gates for selected high-impact actions.
 
-The approach does not assume a fixed policy. It evaluates externally observable invariants across successive versions and can treat self-modification as a high-risk state transition. It would not by itself guarantee alignment under unrestricted self-improvement, but it could reveal when assurance claims cease to hold and provide concrete counterexamples for escalation.
+Measure violation recall/precision, unsafe-action prevention, false blocks, property/hazard coverage, localization time, runtime overhead, and reviewer agreement.
 
 ## Intended outputs
 
-- Open property schema for agentic systems
-- Scenario generator and trace format
+- Versioned event/property schema
+- Authorization/evidence trust model
+- Scenario generator with reproducible seeds
 - Coverage dashboard
-- Counterexample corpus
-- Research report on predictive validity and limitations
-
-## Why this is neglected
-
-Much alignment work focuses on training objectives or model-level evaluations. This proposal treats alignment as a continuing assurance case: requirements, evidence, coverage, counterexamples, and release gates spanning the whole agent system.
-
+- Counterexample corpus and minimizer
+- Model/scaffold evaluation report
 
 ## Working paper
 
-[Alignment Assurance Lab: Trace-Based Property Monitoring and Coverage for Tool-Using AI Agents](../papers/alignment-assurance-lab-working-paper.md) is a working paper and prototype report. It documents the four implemented properties, current unit-level evidence, proposed evaluation, limitations, and related work.
-
-## Runnable prototype
-
-The first executable property monitor is implemented in [`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py). It checks authorization before sensitive actions, evidence before high-risk actions, independent approval, and shutdown compliance while reporting covered and uncovered properties. Run it with [the example trace](../examples/agent_trace.json) through the repository CLI.
+[Alignment Assurance Lab: Trace-Based Property Monitoring and Coverage for Tool-Using AI Agents](../papers/alignment-assurance-lab-working-paper.md) documents the implemented monitor, limitations, and evaluation roadmap.
