@@ -1,0 +1,15 @@
+[
+  {"type": "evidence", "source": "risk-engine", "confidence": 0.97},
+  {"type": "authorize", "action": "disable_account", "actor": "soc-analyst"},
+  {
+    "type": "action",
+    "action": "disable_account",
+    "sensitive": true,
+    "high_risk": true,
+    "proposer": "cloudguard-agent",
+    "approver": "soc-analyst"
+  },
+  {"type": "shutdown"},
+  {"type": "audit", "result": "completed"}
+]
+
