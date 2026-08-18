@@ -45,6 +45,10 @@ The approach does not assume a fixed policy. It evaluates externally observable 
 Much alignment work focuses on training objectives or model-level evaluations. This proposal treats alignment as a continuing assurance case: requirements, evidence, coverage, counterexamples, and release gates spanning the whole agent system.
 
 
+## Working paper
+
+[Alignment Assurance Lab: Trace-Based Property Monitoring and Coverage for Tool-Using AI Agents](../papers/alignment-assurance-lab-working-paper.md) is a working paper and prototype report. It documents the four implemented properties, current unit-level evidence, proposed evaluation, limitations, and related work.
+
 ## Runnable prototype
 
 The first executable property monitor is implemented in [`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py). It checks authorization before sensitive actions, evidence before high-risk actions, independent approval, and shutdown compliance while reporting covered and uncovered properties. Run it with [the example trace](../examples/agent_trace.json) through the repository CLI.
