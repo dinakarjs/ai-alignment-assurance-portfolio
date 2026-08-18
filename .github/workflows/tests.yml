@@ -53,3 +53,18 @@ jobs:
           if result.status is not ValidationStatus.VALID:
               raise SystemExit(1)
           PY
+
+  rtl-behavioral-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package and Icarus Verilog
+        run: |
+          python -m pip install -e .
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Prove seeded RTL mutation is detected
+        run: assurance-demo rtl-benchmark --rtl-root benchmarks/rtl
