@@ -1,0 +1,29 @@
+{
+  "manifest_version": "cloudguard-predictive-controls/5.0.0",
+  "required_controls": [
+    "observability_reduces_forecast_assurance",
+    "forecast_score_never_grants_authority",
+    "attack_state_and_forecast_are_separate",
+    "local_exposure_conditions_global_forecast",
+    "kev_and_epss_are_inputs_not_risk_scores",
+    "unreachable_paths_receive_zero_exposure_priority",
+    "preemption_optimizes_risk_reduction_and_operational_cost",
+    "preemptive_actions_pass_v4_policy_gate",
+    "training_data_requires_provenance_and_confirmed_labels",
+    "untrusted_training_data_requires_corroboration_and_human_review",
+    "production_model_is_not_mutated_online",
+    "challenger_promotion_requires_independent_review",
+    "challenger_promotion_requires_calibration_gate",
+    "challenger_promotion_requires_false_preemption_gate",
+    "challenger_promotion_requires_old_threat_retention",
+    "challenger_promotion_requires_poison_suite",
+    "challenger_promotion_requires_shadow_evidence"
+  ],
+  "claim_boundary": {
+    "transition_scores_are_calibrated_probabilities": false,
+    "local_priority_is_breach_probability": false,
+    "forecast_predicts_attacker_intent": false,
+    "automatic_production_model_update": false,
+    "forecast_bypasses_hil": false
+  }
+}
