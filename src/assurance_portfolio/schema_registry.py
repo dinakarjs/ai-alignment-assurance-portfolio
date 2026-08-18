@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
+
+from jsonschema import Draft202012Validator
 
 from .result_integrity import sha256_object
 
@@ -29,6 +31,12 @@ class SchemaDescriptor:
     compatibility: Compatibility | None = None
     proposer: str | None = None
     approver: str | None = None
+
+
+@dataclass(frozen=True)
+class InstanceValidation:
+    valid: bool
+    errors: tuple[str, ...]
 
 
 class SchemaRegistry:
@@ -59,6 +67,21 @@ class SchemaRegistry:
         properties = document.get("properties")
         if properties is not None and not isinstance(properties, Mapping):
             raise ValueError("schema properties must be an object")
+        Draft202012Validator.check_schema(document)
+
+    @staticmethod
+    def validate_instances(
+        schema: Mapping[str, object], instances: Sequence[Mapping[str, object]]
+    ) -> InstanceValidation:
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        errors: list[str] = []
+        for index, instance in enumerate(instances):
+            for error in sorted(validator.iter_errors(instance), key=lambda item: list(item.path)):
+                path = ".".join(str(item) for item in error.path)
+                location = f"event[{index}]" + (f".{path}" if path else "")
+                errors.append(f"{location}: {error.message}")
+        return InstanceValidation(valid=not errors, errors=tuple(errors))
 
     @staticmethod
     def classify_change(old: Mapping[str, object], new: Mapping[str, object]) -> Compatibility:
