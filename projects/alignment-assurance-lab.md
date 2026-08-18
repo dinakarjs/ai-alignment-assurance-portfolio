@@ -43,3 +43,8 @@ The approach does not assume a fixed policy. It evaluates externally observable 
 ## Why this is neglected
 
 Much alignment work focuses on training objectives or model-level evaluations. This proposal treats alignment as a continuing assurance case: requirements, evidence, coverage, counterexamples, and release gates spanning the whole agent system.
+
+
+## Runnable prototype
+
+The first executable property monitor is implemented in [`trace_assurance.py`](../src/assurance_portfolio/trace_assurance.py). It checks authorization before sensitive actions, evidence before high-risk actions, independent approval, and shutdown compliance while reporting covered and uncovered properties. Run it with [the example trace](../examples/agent_trace.json) through the repository CLI.
