@@ -7,6 +7,14 @@
 
 CloudGuard AI originated in a Responsible AI and Explainability workshop project by Kenneth Amanchukwu, John Nova, and Srinivasa Dinakar. The scenario follows a suspicious account sequence: geographically impossible logins, privilege escalation, unusual storage access, and a high-risk recommendation.
 
+## Research artifacts
+
+- [CloudGuard AI course report - repository edition](../papers/cloudguard-ai-course-report.md)
+- [CloudGuard AI research presentation notes](../papers/cloudguard-ai-research-presentation.md)
+- [Papers and research-artifact catalog](../papers/README.md)
+
+These artifacts are academic course and presentation materials and are not peer-reviewed publications.
+
 ## What the prototype does
 
 - Scores five normalized cloud-risk signals with explicit additive contributions.
