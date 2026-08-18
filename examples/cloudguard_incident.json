@@ -7,6 +7,10 @@
     "failed_logins": 1.0,
     "malicious_ip": 0.58,
     "time_anomaly": 1.0
+  },
+  "decision": {
+    "analyst": "soc-analyst-7",
+    "decision": "approve",
+    "rationale": "Correlated identity and network evidence confirmed account compromise."
   }
 }
-
