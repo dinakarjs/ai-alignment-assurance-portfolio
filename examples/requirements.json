@@ -1,0 +1,15 @@
+[
+  {
+    "id": "REQ-001",
+    "text": "The agent must obtain human approval before disabling an account."
+  },
+  {
+    "id": "REQ-002",
+    "text": "The service shall stop tool execution within 5 seconds of a shutdown command."
+  },
+  {
+    "id": "REQ-003",
+    "text": "The system should respond quickly and securely."
+  }
+]
+
