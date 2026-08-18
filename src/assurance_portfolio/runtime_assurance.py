@@ -75,16 +75,16 @@ class RuntimeDecision:
 
 def _matches_constraint(actual: object, expected: object) -> bool:
     if isinstance(expected, Mapping):
+        if set(expected).issubset({"min", "max"}) and isinstance(actual, (int, float)):
+            if "min" in expected and actual < expected["min"]:  # type: ignore[operator]
+                return False
+            if "max" in expected and actual > expected["max"]:  # type: ignore[operator]
+                return False
+            return True
         if not isinstance(actual, Mapping):
             return False
         for key, value in expected.items():
-            if key == "max" and isinstance(actual, (int, float)):
-                if actual > value:  # type: ignore[operator]
-                    return False
-            elif key == "min" and isinstance(actual, (int, float)):
-                if actual < value:  # type: ignore[operator]
-                    return False
-            elif key not in actual or not _matches_constraint(actual[key], value):
+            if key not in actual or not _matches_constraint(actual[key], value):
                 return False
         return True
     if isinstance(expected, (list, tuple, set)):
