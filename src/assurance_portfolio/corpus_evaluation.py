@@ -1,4 +1,4 @@
-"""Repeated multi-family workflow evaluation for the V8 benchmark corpus."""
+"""Repeated multi-family workflow evaluation for the benchmark corpus."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from statistics import mean
 from time import perf_counter
 from typing import Callable
 
-from .agentic_verification import ModelArtifactGenerator, ModelArtifactReviewer, ModelBackend
+from .agentic_verification import (
+    ModelArtifactGenerator,
+    ModelArtifactReviewer,
+    ModelBackend,
+    ModelUsage,
+    backend_usage,
+)
 from .corpus_benchmark import CorpusCase, IcarusCorpusRunner, default_corpus
 from .sva_validation import StructuralSVAValidator, ValidationStatus
 from .verification_copilot import ArtifactGenerator, Requirement
@@ -38,6 +44,11 @@ class CorpusWorkflowResult:
     false_positive_count: int | None
     fully_correct: bool | None
     elapsed_seconds: float
+    usage_available: bool = False
+    model_requests: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
     notes: tuple[str, ...] = ()
 
 
@@ -61,6 +72,11 @@ class ConditionAggregate:
     mutation_detection_rate: float | None
     false_positive_rate: float | None
     mean_elapsed_seconds: float
+    usage_available_rate: float
+    model_requests: int
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
 
 
 @dataclass(frozen=True)
@@ -88,6 +104,16 @@ def _baseline_context(requirement: Requirement) -> dict[str, object]:
     }
 
 
+def _usage_fields(usage: ModelUsage) -> dict[str, object]:
+    return {
+        "usage_available": usage.available,
+        "model_requests": usage.requests,
+        "input_tokens": usage.input_tokens if usage.available else None,
+        "output_tokens": usage.output_tokens if usage.available else None,
+        "total_tokens": usage.total_tokens if usage.available else None,
+    }
+
+
 def _stopped(
     *,
     trial_id: int,
@@ -99,6 +125,7 @@ def _stopped(
     structural_valid: bool | None,
     started: float,
     notes: tuple[str, ...],
+    usage: ModelUsage = ModelUsage(),
 ) -> CorpusWorkflowResult:
     return CorpusWorkflowResult(
         trial_id=trial_id,
@@ -116,6 +143,7 @@ def _stopped(
         fully_correct=None,
         elapsed_seconds=perf_counter() - started,
         notes=notes,
+        **_usage_fields(usage),
     )
 
 
@@ -130,6 +158,7 @@ def _execute(
     rtl_root: str | Path,
     runner: IcarusCorpusRunner,
     notes: tuple[str, ...] = (),
+    usage: ModelUsage = ModelUsage(),
 ) -> CorpusWorkflowResult:
     structural = StructuralSVAValidator().validate(assertion)
     if structural.status is not ValidationStatus.VALID:
@@ -143,6 +172,7 @@ def _execute(
             structural_valid=False,
             started=started,
             notes=notes + (f"structural validation failed: {structural.detail}",),
+            usage=usage,
         )
     result = runner.evaluate(case, assertion, rtl_root)
     behavioral = result.good_rtl_passed is not None and result.mutation_detected is not None
@@ -162,6 +192,7 @@ def _execute(
         fully_correct=result.fully_correct if behavioral else None,
         elapsed_seconds=perf_counter() - started,
         notes=notes + (result.detail,),
+        **_usage_fields(usage),
     )
 
 
@@ -193,9 +224,11 @@ def _single_model(
 ) -> CorpusWorkflowResult:
     started = perf_counter()
     requirement = _requirement(case)
+    before = backend_usage(backend)
     try:
         draft = ModelArtifactGenerator(backend).generate(requirement, _baseline_context(requirement))
     except (ValueError, RuntimeError) as exc:
+        usage = backend_usage(backend).delta(before)
         return _stopped(
             trial_id=trial_id,
             condition="single_model",
@@ -206,7 +239,9 @@ def _single_model(
             structural_valid=None,
             started=started,
             notes=(f"generation failed: {exc}",),
+            usage=usage,
         )
+    usage = backend_usage(backend).delta(before)
     return _execute(
         trial_id=trial_id,
         condition="single_model",
@@ -216,6 +251,7 @@ def _single_model(
         started=started,
         rtl_root=rtl_root,
         runner=runner,
+        usage=usage,
     )
 
 
@@ -232,10 +268,13 @@ def _reviewed(
 ) -> CorpusWorkflowResult:
     started = perf_counter()
     requirement = _requirement(case)
+    generator_before = backend_usage(generator_backend)
+    reviewer_before = backend_usage(reviewer_backend)
     try:
         draft = ModelArtifactGenerator(generator_backend).generate(requirement, _baseline_context(requirement))
         review = ModelArtifactReviewer(reviewer_backend).review(requirement, draft)
     except (ValueError, RuntimeError) as exc:
+        usage = backend_usage(generator_backend).delta(generator_before) + backend_usage(reviewer_backend).delta(reviewer_before)
         return _stopped(
             trial_id=trial_id,
             condition=condition,
@@ -246,7 +285,9 @@ def _reviewed(
             structural_valid=None,
             started=started,
             notes=(f"workflow failed: {exc}",),
+            usage=usage,
         )
+    usage = backend_usage(generator_backend).delta(generator_before) + backend_usage(reviewer_backend).delta(reviewer_before)
     if review.verdict != "ACCEPT_FOR_TOOL_CHECK":
         return _stopped(
             trial_id=trial_id,
@@ -258,6 +299,7 @@ def _reviewed(
             structural_valid=None,
             started=started,
             notes=("execution withheld by reviewer",) + review.findings,
+            usage=usage,
         )
     if tool_gate:
         structural = StructuralSVAValidator().validate(draft.assertion)
@@ -272,6 +314,7 @@ def _reviewed(
                 structural_valid=False,
                 started=started,
                 notes=(f"tool gate rejected assertion: {structural.detail}",),
+                usage=usage,
             )
         notes = ("reviewer and structural tool gate accepted candidate",)
     else:
@@ -286,6 +329,7 @@ def _reviewed(
         rtl_root=rtl_root,
         runner=runner,
         notes=notes,
+        usage=usage,
     )
 
 
@@ -302,7 +346,7 @@ def run_corpus_trial(
     runner_factory: Callable[[], IcarusCorpusRunner] = IcarusCorpusRunner,
     evidence_kind: str = "scripted_offline",
     model_label: str | None = None,
-    prompt_version: str = "v8.0",
+    prompt_version: str = "v9.0",
 ) -> CorpusTrial:
     active_corpus = corpus or default_corpus()
     results: list[CorpusWorkflowResult] = []
@@ -372,6 +416,7 @@ def summarize_trials(trials: tuple[CorpusTrial, ...]) -> CorpusEvaluationSummary
             sum((row.false_positive_count or 0) > 0 for row in executed) / len(executed)
             if executed else None
         )
+        usage_rows = [row for row in rows if row.usage_available]
         aggregates.append(
             ConditionAggregate(
                 condition=condition,
@@ -383,6 +428,11 @@ def summarize_trials(trials: tuple[CorpusTrial, ...]) -> CorpusEvaluationSummary
                 mutation_detection_rate=mutation_rate,
                 false_positive_rate=false_positive_rate,
                 mean_elapsed_seconds=mean(row.elapsed_seconds for row in rows),
+                usage_available_rate=len(usage_rows) / len(rows),
+                model_requests=sum(row.model_requests for row in rows),
+                input_tokens=sum(row.input_tokens or 0 for row in usage_rows) if usage_rows else None,
+                output_tokens=sum(row.output_tokens or 0 for row in usage_rows) if usage_rows else None,
+                total_tokens=sum(row.total_tokens or 0 for row in usage_rows) if usage_rows else None,
             )
         )
 
