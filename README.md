@@ -3,8 +3,8 @@
 This repository combines three small, dependency-light prototypes:
 
 1. **CloudGuard AI** - explainable cloud-threat scoring, human approval for high-risk actions, and auditable decisions.
-2. **Agent Trace Assurance** - executable checks for authorization, evidence, independent approval, and shutdown compliance.
-3. **Multi-Agent Verification Copilot** - traceable draft assertions, scenarios, coverage goals, and independent ambiguity review.
+2. **Agent Trace Assurance Engine** - a deterministic policy monitor that evaluates ordered agent-event traces, pinpoints violations of authorization, evidence, independent-approval, and shutdown rules, and reports coverage gaps.
+3. **Verification Copilot** - a role-separated workflow that converts natural-language requirements into traceable draft assertions, nominal/boundary/adversarial scenarios, and coverage goals, followed by an independent ambiguity review.
 
 The prototypes demonstrate research ideas; they are not production security or alignment systems.
 
@@ -39,7 +39,7 @@ It calls its explanations **SHAP-style** because it reproduces additive feature 
 
 ## Agent Trace Assurance
 
-Agent Trace Assurance treats an agent execution as an ordered event trace and checks explicit safety properties against that trace. It provides a small, auditable example of how verification concepts can be applied to tool-using or autonomous AI systems.
+Agent Trace Assurance is a deterministic assurance engine for tool-using and autonomous AI systems. It treats each execution as an ordered event trace, evaluates explicit safety properties at every relevant step, and identifies the exact event where a violation occurs. The design adapts pre-silicon verification ideas—properties, monitors, counterexamples, and coverage—to agent behavior in a compact, auditable form.
 
 The current monitor checks:
 
@@ -59,7 +59,7 @@ assurance-demo trace examples/agent_trace.json
 
 ## Multi-Agent Verification Copilot
 
-The Verification Copilot is a role-separated reference workflow for converting natural-language requirements into reviewable verification artifacts. It generates a draft assertion, nominal/boundary/adversarial scenarios, and a requirement-linked coverage goal.
+The Verification Copilot is a role-separated reference workflow for turning natural-language safety requirements into reviewable verification artifacts. A generation role creates a draft assertion, nominal/boundary/adversarial scenarios, and a requirement-linked coverage goal; an independent review role then flags ambiguity and specification weaknesses before the artifacts are accepted.
 
 A separate review step identifies weak specifications, including:
 
