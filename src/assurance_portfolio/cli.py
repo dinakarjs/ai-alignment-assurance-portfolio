@@ -10,6 +10,7 @@ from typing import Mapping
 
 from .agentic_verification import AgenticVerificationCopilot, OpenAIResponsesBackend
 from .cloudguard import CloudGuardEngine, incident_from_dict
+from .rtl_behavioral import run_handshake_rtl_benchmark
 from .sva_validation import StructuralSVAValidator, VerilatorSVAValidator
 from .trace_assurance import TraceAssuranceEngine
 from .verification_benchmark import run_reference_benchmark
@@ -81,11 +82,40 @@ def main() -> None:
         help="Run the dependency-free seeded trace benchmark",
     )
 
+    rtl_benchmark = subparsers.add_parser(
+        "rtl-benchmark",
+        help="Compile and simulate the seeded request/grant RTL mutation benchmark",
+    )
+    rtl_benchmark.add_argument(
+        "--rtl-root",
+        default="benchmarks/rtl",
+        help="Directory containing handshake_good.sv and handshake_late_bug.sv",
+    )
+
     args = parser.parse_args()
 
     if args.command == "benchmark":
-        payload = [asdict(item) | {"accuracy": item.accuracy, "defect_detection_rate": item.defect_detection_rate} for item in run_reference_benchmark()]
+        payload = [
+            asdict(item)
+            | {
+                "accuracy": item.accuracy,
+                "defect_detection_rate": item.defect_detection_rate,
+            }
+            for item in run_reference_benchmark()
+        ]
         print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "rtl-benchmark":
+        report = run_handshake_rtl_benchmark(args.rtl_root)
+        payload = asdict(report) | {
+            "mutation_detection_rate": report.mutation_detection_rate,
+            "false_positive_count": report.false_positive_count,
+            "all_expectations_met": report.all_expectations_met,
+        }
+        print(json.dumps(payload, indent=2))
+        if not report.all_expectations_met:
+            raise SystemExit(1)
         return
 
     data = _load(args.input)
