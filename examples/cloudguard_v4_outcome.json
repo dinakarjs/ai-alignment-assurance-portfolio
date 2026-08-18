@@ -1,0 +1,10 @@
+{
+  "incident_id": "INC-2026-1072",
+  "action": "revoke_cloud_token",
+  "outcome": "SUCCESS",
+  "threat_contained": true,
+  "recovery_required": false,
+  "false_positive": false,
+  "followup_required": true,
+  "notes": "Reference fixture demonstrating outcome capture; not a production incident claim."
+}

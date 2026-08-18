@@ -1,0 +1,33 @@
+{
+  "manifest_version": "cloudguard-controls/4.0.0",
+  "status": "PROPOSED_REFERENCE",
+  "controls": [
+    "threat_source_trust_classification",
+    "untrusted_threat_intelligence_cannot_activate_policy",
+    "immutable_threat_versions",
+    "threat_update_independent_review",
+    "threat_update_regression_required",
+    "security_weakening_dual_review",
+    "untrusted_source_dual_review",
+    "verified_evidence_before_effectful_response",
+    "response_impact_tiering",
+    "account_change_human_approval",
+    "destructive_action_dual_independent_approval",
+    "model_confidence_not_authority",
+    "detector_and_threat_version_provenance",
+    "threat_detection_audit_record",
+    "human_review_audit_record",
+    "response_outcome_audit_record",
+    "field_issue_gap_classification",
+    "feedback_proposes_never_auto_activates",
+    "authorized_rollback_is_audited",
+    "audit_hash_chain_integrity"
+  ],
+  "control_planes": [
+    "threat_knowledge",
+    "detection",
+    "assurance",
+    "human_governance",
+    "audit_and_feedback"
+  ]
+}

@@ -29,6 +29,17 @@ jobs:
           assurance-demo trace examples/agent_trace.json
           assurance-demo copilot examples/requirements.json
           assurance-demo benchmark
+      - name: Exercise CloudGuard V4 assurance controls
+        run: |
+          rm -f /tmp/cloudguard-audit.jsonl
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl threat-update examples/cloudguard_v4_threat_update.json
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl record-detection examples/cloudguard_v4_detection.json \
+            --threat-db-digest 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl response examples/cloudguard_v4_response.json
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl feedback examples/cloudguard_v4_field_issue.json
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl record-outcome examples/cloudguard_v4_outcome.json
+          assurance-cloudguard --audit-log /tmp/cloudguard-audit.jsonl verify-audit
+          test "$(wc -l < /tmp/cloudguard-audit.jsonl)" -eq 6
       - name: Exercise Agent Trace Assurance V6 controls
         run: |
           assurance-runtime examples/runtime_assurance_request.json

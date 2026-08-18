@@ -1,0 +1,13 @@
+{
+  "field_issue_id": "FI-2026-091",
+  "incident_id": "INC-2026-1072",
+  "confirmed_unsafe": true,
+  "detected_before_effect": false,
+  "detector_fired": false,
+  "telemetry_complete": true,
+  "threat_known": false,
+  "policy_blocked": false,
+  "response_effective": false,
+  "recovery_effective": false,
+  "false_positive": false
+}
