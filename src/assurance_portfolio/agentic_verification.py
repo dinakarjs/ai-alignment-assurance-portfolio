@@ -1,11 +1,4 @@
-"""Model-backed generator/reviewer orchestration with deterministic tool grounding.
-
-The deterministic V4 copilot remains the offline baseline. This module adds a
-real two-call agentic path: one model invocation proposes an artifact and a
-separate model invocation reviews it. A deterministic validator remains the
-final source of executable evidence; model agreement never substitutes for a
-tool result.
-"""
+"""Model-backed generator/reviewer orchestration with deterministic tool grounding."""
 
 from __future__ import annotations
 
@@ -18,11 +11,50 @@ from .sva_validation import SVAValidationResult, StructuralSVAValidator, Validat
 from .verification_copilot import ArtifactGenerator, Requirement
 
 
+@dataclass(frozen=True)
+class ModelUsage:
+    """Cumulative model-usage telemetry for one backend instance."""
+
+    available: bool = False
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+    def delta(self, earlier: "ModelUsage") -> "ModelUsage":
+        return ModelUsage(
+            available=self.available or earlier.available,
+            requests=max(0, self.requests - earlier.requests),
+            input_tokens=max(0, self.input_tokens - earlier.input_tokens),
+            output_tokens=max(0, self.output_tokens - earlier.output_tokens),
+            total_tokens=max(0, self.total_tokens - earlier.total_tokens),
+        )
+
+    def __add__(self, other: "ModelUsage") -> "ModelUsage":
+        return ModelUsage(
+            available=self.available or other.available,
+            requests=self.requests + other.requests,
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+        )
+
+
 class ModelBackend(Protocol):
     @property
     def name(self) -> str: ...
 
+    @property
+    def usage(self) -> ModelUsage: ...
+
     def complete(self, *, role: str, prompt: str) -> str: ...
+
+
+def backend_usage(backend: object) -> ModelUsage:
+    """Read usage without requiring third-party/custom backends to implement it."""
+
+    value = getattr(backend, "usage", None)
+    return value if isinstance(value, ModelUsage) else ModelUsage()
 
 
 class ScriptedModelBackend:
@@ -37,6 +69,10 @@ class ScriptedModelBackend:
     def name(self) -> str:
         return self._name
 
+    @property
+    def usage(self) -> ModelUsage:
+        return ModelUsage(available=False, requests=self._index)
+
     def complete(self, *, role: str, prompt: str) -> str:
         del role, prompt
         if self._index >= len(self._responses):
@@ -47,21 +83,21 @@ class ScriptedModelBackend:
 
 
 class OpenAIResponsesBackend:
-    """Optional OpenAI Responses API backend.
-
-    `openai` is imported lazily so the core package remains dependency-light.
-    Configure OPENAI_API_KEY normally through the SDK and provide a model via
-    `model=` or OPENAI_MODEL.
-    """
+    """Optional OpenAI Responses API backend with cumulative token telemetry."""
 
     def __init__(self, model: str | None = None) -> None:
         self.model = model or os.getenv("OPENAI_MODEL", "")
         if not self.model:
             raise ValueError("An OpenAI model is required via model= or OPENAI_MODEL")
+        self._usage = ModelUsage()
 
     @property
     def name(self) -> str:
         return f"openai-responses:{self.model}"
+
+    @property
+    def usage(self) -> ModelUsage:
+        return self._usage
 
     def complete(self, *, role: str, prompt: str) -> str:
         try:
@@ -76,6 +112,23 @@ class OpenAIResponsesBackend:
             instructions=role,
             input=prompt,
         )
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            total_tokens = int(
+                getattr(usage, "total_tokens", input_tokens + output_tokens)
+                or input_tokens + output_tokens
+            )
+            self._usage = self._usage + ModelUsage(
+                available=True,
+                requests=1,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+            )
+        else:
+            self._usage = self._usage + ModelUsage(requests=1)
         text = response.output_text
         if not text:
             raise RuntimeError("OpenAI response did not contain output_text")
