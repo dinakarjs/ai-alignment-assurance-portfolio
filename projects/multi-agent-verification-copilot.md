@@ -1,6 +1,6 @@
 # Multi-Agent Verification Copilot
 
-**Status:** Applied research concept  
+**Status:** Applied research concept with deterministic reference prototype  
 **Theme:** AI-assisted verification with auditable role separation
 
 ## Motivation
@@ -16,44 +16,54 @@ Complex verification work requires specification analysis, test planning, assert
 - **Coverage analyst:** identifies untested requirements and weak evidence.
 - **Orchestrator:** maintains provenance, disagreement, approval gates, and human escalation.
 
-Every output is linked to its source requirement and carries confidence, assumptions, and review status. No agent is permitted to approve its own work.
+No role is intended to approve its own work. In the full research architecture, model-backed roles will remain subject to deterministic tool checks and human acceptance.
+
+## Runnable V4 baseline
+
+The dependency-free reference implementation in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py) is deliberately **not** presented as a deployed multi-agent LLM system. It provides a deterministic baseline with separate components for:
+
+- requirement-quality review,
+- explicit-grammar artifact generation,
+- independent artifact review, and
+- orchestration into a traceable `VerificationArtifact`.
+
+A requirement is marked **SUPPORTED** only if the entire normalized text matches one of the supported grammars. Partial semantic matches fall back rather than discarding unsupported clauses. Supported patterns generate pattern-specific scenarios and coverage goals, and the output records pattern provenance plus extracted translation parameters.
+
+The current generator still produces draft SVA-style strings. It does not parse RTL, infer clock/reset context, invoke simulation/formal tools, or establish semantic correctness.
 
 ## Safety relevance
 
-The same architecture can evaluate agentic AI systems. Separation of proposer and verifier roles reduces correlated error; traceability reveals unsupported claims; and disagreement becomes a signal for human review rather than something to average away.
+The same architecture can evaluate agentic AI systems. Separation of proposer and verifier roles can reduce some correlated workflow errors; traceability reveals unsupported claims; and disagreement can become a signal for human review rather than something to average away. Role labels alone do not guarantee statistical or model-level independence.
 
-## First test
+## First controlled evaluation
 
-Use a compact protocol or control-block specification. Compare:
+Use a compact public protocol or control block and compare:
 
 1. a single-agent workflow,
 2. a multi-agent workflow without independence constraints, and
-3. the proposed role-separated workflow.
+3. a role-separated workflow with deterministic verification-tool feedback.
 
-Measure requirement recall, assertion correctness, vacuity, test-plan coverage, defect discovery, false positives, and human review time.
+Measure requirement recall, assertion parse/elaboration success, semantic correctness, vacuity, seeded-defect detection, false positives, coverage, human review time, and cost.
 
 ## Key risks
 
 - Multiple agents may share the same model-level blind spots.
 - Plausible documentation can create false confidence.
+- Natural-language parsers may silently omit qualifiers unless fail-safe matching is enforced.
 - Orchestration may add cost without improving defect discovery.
 - Automated scoring may reward superficial traceability.
 
-The experiment must therefore use seeded defects, independently authored reference properties, and explicit abstention/error analysis.
+The experiment must therefore use seeded defects, independently authored reference properties, executable tool checks, and explicit abstention/error analysis.
 
 ## Intended outputs
 
 - Role and message schemas
 - Traceability graph format
+- Model-backed generator/reviewer adapters
+- Parser/simulator/formal assertion checks
 - Evaluation dataset with seeded defects
-- Baseline comparison
-- Failure taxonomy and research report
-
+- Baseline comparison and failure taxonomy
 
 ## Working paper
 
-[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) is a working paper and prototype report. It separates implemented behavior and unit-test evidence from the proposed comparative study.
-
-## Runnable prototype
-
-A dependency-free reference implementation is available in [`verification_copilot.py`](../src/assurance_portfolio/verification_copilot.py). It converts requirements into traceable draft assertions, scenarios, and coverage goals, then applies a separate ambiguity review. The [example requirements](../examples/requirements.json) include both precise and deliberately weak specifications.
+[Role-Separated Multi-Agent Verification Copilot: A Traceable Workflow for AI-Assisted Pre-Silicon Verification](../papers/multi-agent-verification-copilot-working-paper.md) is a working paper and prototype report. It separates implemented deterministic behavior from the proposed model-backed comparative study.
