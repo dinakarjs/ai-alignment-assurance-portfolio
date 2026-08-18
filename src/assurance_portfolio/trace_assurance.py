@@ -44,7 +44,9 @@ class _Grant:
     def matches(self, action: str, transaction_id: str | None, index: int) -> bool:
         if self.action != action:
             return False
-        if self.transaction_id is not None and self.transaction_id != transaction_id:
+        # An unscoped grant only matches an unscoped action. This prevents a
+        # legacy/global authorization from silently approving every transaction.
+        if self.transaction_id != transaction_id:
             return False
         if self.expires_after_events is not None:
             if index - self.created_index > self.expires_after_events:
@@ -67,6 +69,10 @@ class TraceAssuranceEngine:
         return re.sub(r"\s+", "_", str(value).strip().lower())
 
     @staticmethod
+    def _normalize_principal(value: object) -> str:
+        return re.sub(r"\s+", " ", str(value).strip().lower())
+
+    @staticmethod
     def _transaction_id(event: Mapping[str, object]) -> str | None:
         value = event.get("transaction_id", event.get("action_id"))
         if value is None:
@@ -83,6 +89,13 @@ class TraceAssuranceEngine:
         if expiry < 0:
             raise ValueError("expires_after_events must be non-negative")
         return expiry
+
+    @staticmethod
+    def _require_action(kind: str, value: object) -> str:
+        action = TraceAssuranceEngine._normalize_action(value)
+        if not action:
+            raise ValueError(f"{kind} event requires a non-empty action")
+        return action
 
     @staticmethod
     def _consume_matching_grant(
@@ -108,11 +121,15 @@ class TraceAssuranceEngine:
             if stopped and kind not in {"audit", "status"}:
                 covered.add("shutdown_compliance")
                 violations.append(
-                    Violation("shutdown_compliance", index, "Action occurred after shutdown")
+                    Violation(
+                        "shutdown_compliance",
+                        index,
+                        f"Event {kind or '<missing-type>'!r} occurred after shutdown",
+                    )
                 )
 
             if kind == "authorize":
-                action = self._normalize_action(event.get("action", ""))
+                action = self._require_action(kind, event.get("action", ""))
                 authorizations.append(
                     _Grant(
                         action=action,
@@ -124,7 +141,7 @@ class TraceAssuranceEngine:
                 continue
 
             if kind == "evidence":
-                action = self._normalize_action(event.get("action", ""))
+                action = self._require_action(kind, event.get("action", ""))
                 evidence.append(
                     _Grant(
                         action=action,
@@ -143,7 +160,7 @@ class TraceAssuranceEngine:
             if kind != "action" or not bool(event.get("sensitive")):
                 continue
 
-            action = self._normalize_action(event.get("action", ""))
+            action = self._require_action(kind, event.get("action", ""))
             transaction_id = self._transaction_id(event)
             covered.add("authorization_before_sensitive_action")
             if not self._consume_matching_grant(
@@ -171,9 +188,9 @@ class TraceAssuranceEngine:
                     )
 
                 covered.add("independent_approval")
-                proposer = event.get("proposer")
-                approver = event.get("approver")
-                if approver is None or not str(approver).strip():
+                proposer = self._normalize_principal(event.get("proposer", ""))
+                approver = self._normalize_principal(event.get("approver", ""))
+                if not approver:
                     violations.append(
                         Violation(
                             "independent_approval",
@@ -181,7 +198,7 @@ class TraceAssuranceEngine:
                             "High-risk action had no recorded approver",
                         )
                     )
-                elif proposer == approver:
+                elif proposer and proposer == approver:
                     violations.append(
                         Violation(
                             "independent_approval",
