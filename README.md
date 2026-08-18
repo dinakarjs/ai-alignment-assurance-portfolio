@@ -123,16 +123,16 @@ assurance-demo corpus-eval-live \
   --output-root artifacts/experiments
 ```
 
-Each deterministic run directory contains:
+Each run directory contains:
 
-- `manifest.json` - run ID, evidence/model/prompt configuration, git SHA where available, invocation and environment;
+- `manifest.json` - experiment ID, run ID, evidence/model/prompt configuration, git SHA where available, invocation and environment;
 - `trials.json` - complete structured trial output;
 - `summary.json` - aggregate metrics;
 - `results.csv` - row-level case/workflow observations;
 - `aggregates.csv` - per-condition summary metrics;
 - `REPORT.md` - a compact human-readable report with an explicit interpretation boundary.
 
-The run ID is a hash of experiment identity fields rather than a timestamp. Dollar cost is deliberately left unset because pricing is model- and date-dependent; historical token counts should be joined to an explicitly dated pricing table rather than silently repriced.
+The **experiment ID** hashes the recorded configuration and code identity. The **run ID** hashes the experiment ID plus outcome-bearing trial fields, so stochastic reruns can share the same experiment configuration without overwriting different observed results. Dollar cost is deliberately left unset because pricing is model- and date-dependent; historical token counts should be joined to an explicitly dated pricing table rather than silently repriced.
 
 See [`benchmarks/V8_CORPUS.md`](benchmarks/V8_CORPUS.md) and [`benchmarks/V9_EXPERIMENT_ARTIFACTS.md`](benchmarks/V9_EXPERIMENT_ARTIFACTS.md).
 
