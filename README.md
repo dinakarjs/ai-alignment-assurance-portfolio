@@ -1,10 +1,10 @@
-# AI Alignment Assurance Portfolio - Runnable Prototypes
+# AI Assurance & Agentic Verification Portfolio - Runnable Prototypes
 
-This repository combines three small, dependency-light prototypes:
+This repository applies semiconductor verification ideas to AI assurance and applies AI-assisted workflows back to verification engineering. It combines three small, dependency-light prototypes:
 
 1. **CloudGuard AI** - explainable cloud-threat scoring, human approval for high-risk actions, and auditable decisions.
-2. **Agent Trace Assurance Engine** - a deterministic policy monitor that evaluates ordered agent-event traces, pinpoints violations of authorization, evidence, independent-approval, and shutdown rules, and reports coverage gaps.
-3. **Verification Copilot** - a role-separated workflow that converts natural-language requirements into traceable draft assertions, nominal/boundary/adversarial scenarios, and coverage goals, followed by an independent ambiguity review.
+2. **Agent Trace Assurance Engine V2** - a deterministic policy monitor for ordered agent-event traces with transaction-scoped authorization/evidence, consumable and expiring grants, independent approval checks, shutdown monitoring, and explicit PASS/FAIL/INCONCLUSIVE coverage semantics.
+3. **Verification Copilot V2** - a role-separated workflow in which an artifact-generation component creates traceable draft assertions/scenarios/coverage goals and an independent requirement-review component flags ambiguity before acceptance.
 
 The prototypes demonstrate research ideas; they are not production security or alignment systems.
 
@@ -25,6 +25,8 @@ assurance-demo copilot examples/requirements.json
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
+The test suite includes negative and boundary cases for stale/consumed authorization, transaction mismatch, missing approval, action normalization, shutdown behavior, coverage gaps, and bounded temporal requirement translation.
+
 ## CloudGuard AI
 
 CloudGuard is derived from the Responsible AI and Explainability workshop project developed by Kenneth Amanchukwu, John Nova, and Srinivasa Dinakar. The reference scenario uses five human-readable signals with additive contributions: impossible travel, privilege escalation, failed logins, malicious IP, and time anomaly.
@@ -33,22 +35,26 @@ The prototype deliberately separates:
 
 - a transparent risk recommendation,
 - a mandatory human decision for account disablement, and
-- a tamper-evident recommendation hash in the audit record.
+- a recommendation hash in the audit record for detecting changes to the recommendation object.
 
-It calls its explanations **SHAP-style** because it reproduces additive feature attribution without claiming to run SHAP against a trained production model.
+It calls its explanations **SHAP-style** because it reproduces additive feature attribution without claiming to run SHAP against a trained production model. The current audit hash is not claimed to make the full audit history tamper-proof.
 
-## Agent Trace Assurance
+## Agent Trace Assurance V2
 
-Agent Trace Assurance is a deterministic assurance engine for tool-using and autonomous AI systems. It treats each execution as an ordered event trace, evaluates explicit safety properties at every relevant step, and identifies the exact event where a violation occurs. The design adapts pre-silicon verification ideas—properties, monitors, counterexamples, and coverage—to agent behavior in a compact, auditable form.
+Agent Trace Assurance is a deterministic assurance engine for tool-using and autonomous AI systems. It treats each execution as an ordered event trace, evaluates explicit safety properties at relevant steps, and identifies the exact event where a violation occurs. The design adapts pre-silicon verification ideas—properties, monitors, counterexamples, lifecycle state, and coverage—to agent behavior in a compact, auditable form.
 
-The current monitor checks:
+V2 hardens the first prototype by adding:
 
-- authorization before sensitive actions,
-- recorded evidence before high-risk actions,
-- separation between the action proposer and approver, and
-- compliance with shutdown commands.
+- normalized action identifiers,
+- transaction/action IDs for authorization and evidence,
+- single-use authorization and evidence consumption,
+- optional event-count expiry through `expires_after_events`,
+- explicit violations when a high-risk action has no recorded approver,
+- independent proposer/approver checking,
+- shutdown compliance with audit/status exceptions, and
+- three-state assurance results: **PASS**, **FAIL**, or **INCONCLUSIVE**.
 
-Its output is an assurance report containing the overall pass/fail result, property violations with exact event positions, covered properties, and uncovered properties. This makes both failures and gaps in the evaluation visible.
+A result is **INCONCLUSIVE** when no violation was observed but one or more required properties were not exercised. This deliberately distinguishes "no counterexample observed" from "the assurance case was adequately covered."
 
 Implementation: [`trace_assurance.py`](src/assurance_portfolio/trace_assurance.py)  
 Example input: [`agent_trace.json`](examples/agent_trace.json)
@@ -57,17 +63,56 @@ Example input: [`agent_trace.json`](examples/agent_trace.json)
 assurance-demo trace examples/agent_trace.json
 ```
 
-## Multi-Agent Verification Copilot
+### Trace event model
 
-The Verification Copilot is a role-separated reference workflow for turning natural-language safety requirements into reviewable verification artifacts. A generation role creates a draft assertion, nominal/boundary/adversarial scenarios, and a requirement-linked coverage goal; an independent review role then flags ambiguity and specification weaknesses before the artifacts are accepted.
+Authorization/evidence events can be tied to a specific action instance:
 
-A separate review step identifies weak specifications, including:
+```json
+{"type":"authorize","action":"disable_account","transaction_id":"tx-42","expires_after_events":3}
+{"type":"evidence","action":"disable_account","transaction_id":"tx-42","expires_after_events":3}
+{"type":"action","action":"disable_account","transaction_id":"tx-42","sensitive":true,"high_risk":true,"proposer":"agent","approver":"analyst"}
+```
+
+The matching grants are consumed when used, preventing one early authorization/evidence event from silently pre-clearing every later action.
+
+## Multi-Agent Verification Copilot V2
+
+The Verification Copilot is a role-separated reference workflow for turning natural-language safety requirements into reviewable verification artifacts.
+
+```text
+Requirement
+    |
+    +--> ArtifactGenerator --> draft assertion + scenarios + coverage goal
+    |
+    +--> RequirementReviewer --> ambiguity/specification findings
+                                |
+                                v
+                       VerificationArtifact
+```
+
+The two responsibilities are implemented as separate components and orchestrated by `VerificationCopilot`. This is intentionally dependency-light today; the interfaces are suitable for later replacement with separate LLM/agent calls and EDA-tool integrations.
+
+The independent review step identifies weak specifications including:
 
 - missing normative terms such as “must” or “shall,”
 - non-numeric timing bounds, and
-- ambiguous words such as “quickly,” “appropriate,” or “secure.”
+- ambiguous words such as “quickly,” “appropriate,” “secure,” or “soon.”
 
-The prototype preserves the requirement identifier throughout the output, demonstrating requirements-to-verification traceability. Its generated assertions are intentionally drafts for expert review rather than claims of formally correct SystemVerilog Assertions.
+The prototype preserves the requirement identifier throughout the output. Generated assertions remain **drafts for expert review**, not claims of generally correct SystemVerilog Assertion synthesis.
+
+For a constrained requirement such as:
+
+```text
+grant shall assert within 4 cycles after request
+```
+
+V2 can produce the structured draft:
+
+```systemverilog
+assert property (@(posedge clk) request |-> ##[1:4] grant);
+```
+
+and derives nominal, boundary, and violation scenarios linked to the same requirement ID. Requirements outside the supported pattern fall back to an explicitly marked expert-review draft rather than pretending to be valid SVA.
 
 Implementation: [`verification_copilot.py`](src/assurance_portfolio/verification_copilot.py)  
 Example input: [`requirements.json`](examples/requirements.json)
@@ -94,6 +139,8 @@ assurance-demo copilot examples/requirements.json
 
 These documents are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
-## Scope
+## Scope and next steps
 
-All results are deterministic and reproducible. The code is intentionally small enough to audit. Future work should replace synthetic weights and scenarios with calibrated models, real-world datasets, threat-model validation, and user studies with SOC analysts.
+All current results are deterministic and reproducible, and the code is intentionally small enough to audit. V2 strengthens lifecycle and coverage semantics but does not claim production-grade policy enforcement, general natural-language-to-SVA synthesis, calibrated risk prediction, or empirical alignment guarantees.
+
+Planned extensions include constrained-random/adversarial trace generation, coverage dashboards, counterexample minimization, calibrated/real-world datasets, separate model-backed generator/reviewer agents, EDA tool orchestration, and evaluation across models and agent scaffolds.
