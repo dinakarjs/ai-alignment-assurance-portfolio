@@ -89,8 +89,10 @@ assurance-demo copilot examples/requirements.json
 - [Artifact catalog](papers/README.md)
 - [CloudGuard AI course report - repository edition](papers/cloudguard-ai-course-report.md)
 - [CloudGuard AI research presentation notes](papers/cloudguard-ai-research-presentation.md)
+- [Multi-Agent Verification Copilot working paper](papers/multi-agent-verification-copilot-working-paper.md)
+- [Alignment Assurance Lab working paper](papers/alignment-assurance-lab-working-paper.md)
 
-The CloudGuard documents are academic course and presentation materials, not peer-reviewed publications. No completed manuscript is currently listed for Agent Trace Assurance or the Verification Copilot.
+These documents are course materials, presentation notes, or working papers. None is presented as an accepted or peer-reviewed publication.
 
 ## Scope
 
