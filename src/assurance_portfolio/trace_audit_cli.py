@@ -44,6 +44,7 @@ def main() -> None:
     evaluate.add_argument("--schema-version", default="agent-trace/2.0.0")
     evaluate.add_argument("--policy-version", default="agent-trace-policy/2.0.0")
     evaluate.add_argument("--checker-source", default=None)
+    evaluate.add_argument("--check-manifest-file", default=None)
     evaluate.add_argument("--schema-file", default=None)
     evaluate.add_argument("--policy-file", default=None)
     evaluate.add_argument("--signing-key", default=None, help="Ed25519 private key PEM; never commit this file")
@@ -196,6 +197,7 @@ def main() -> None:
         event_schema_version=args.schema_version,
         policy_version=args.policy_version,
         checker_source_path=args.checker_source,
+        check_manifest_path=args.check_manifest_file,
         schema_path=args.schema_file,
         policy_path=args.policy_file,
         signing_key_path=args.signing_key,
