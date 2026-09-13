@@ -51,7 +51,7 @@ def digest_or_identifier(path: str | Path | None, identifier: str) -> str:
     return sha256_object({"declared_identifier": identifier})
 
 
-def environment_fingerprint(extra: Mapping[str, object] | None = None) -> str:
+def capture_environment(extra: Mapping[str, object] | None = None) -> dict[str, object]:
     payload: dict[str, object] = {
         "python": sys.version.split()[0],
         "implementation": platform.python_implementation(),
@@ -60,7 +60,11 @@ def environment_fingerprint(extra: Mapping[str, object] | None = None) -> str:
     }
     if extra:
         payload["extra"] = dict(extra)
-    return sha256_object(payload)
+    return payload
+
+
+def environment_fingerprint(extra: Mapping[str, object] | None = None) -> str:
+    return sha256_object(capture_environment(extra))
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
@@ -200,7 +204,10 @@ def build_result_attestation(
     signing_key_path: str | Path | None = None,
     signer_id: str | None = None,
     environment_extra: Mapping[str, object] | None = None,
+    environment_snapshot: Mapping[str, object] | None = None,
 ) -> ResultAttestation:
+    if environment_snapshot is not None and environment_extra is not None:
+        raise ValueError("Supply either a captured environment or environment extras, not both")
     required = tuple(sorted(set(required_checks)))
     executed = tuple(sorted(set(executed_checks)))
     required_present = set(required).issubset(executed)
@@ -220,7 +227,8 @@ def build_result_attestation(
         "schema_digest": schema_digest,
         "policy_digest": policy_digest,
         "config_digest": sha256_object(dict(config)),
-        "environment_digest": environment_fingerprint(environment_extra),
+        "environment_digest": (sha256_object(dict(environment_snapshot)) if environment_snapshot is not None
+                               else environment_fingerprint(environment_extra)),
         "git_commit_sha": git_commit_sha,
         "check_version": check_version,
         "minimum_check_version": minimum_check_version,

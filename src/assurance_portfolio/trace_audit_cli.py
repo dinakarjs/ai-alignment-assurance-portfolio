@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from .assurance_selftest import run_canary_suite
+from .consumer_profile import PROFILE, strict_json
 from .field_issue import FieldIssueAnalyzer, field_issue_from_dict
 from .result_integrity import generate_ed25519_keypair, verify_result_attestation
 from .schema_registry import SchemaRegistry
@@ -50,6 +51,9 @@ def main() -> None:
     evaluate.add_argument("--signing-key", default=None, help="Ed25519 private key PEM; never commit this file")
     evaluate.add_argument("--signer-id", default=None)
     evaluate.add_argument("--git-commit", default=None)
+    evaluate.add_argument("--consumer-profile", choices=[PROFILE], default=None)
+    evaluate.add_argument("--run-id", default=None, help="Operator-approved run ID; required by the consumer profile")
+    evaluate.add_argument("--capture-directory", default=None, help="New directory for exact consumer-profile snapshots")
 
     update = subparsers.add_parser("check-update", help="Append a check/schema/policy update record")
     update.add_argument("input", help="JSON file describing the update")
@@ -131,7 +135,8 @@ def main() -> None:
         print(json.dumps({"schema": asdict(descriptor), "audit_record": record}, indent=2))
         return
 
-    data = _load(args.input)
+    data = (strict_json(Path(args.input).read_bytes())
+            if args.command == 'evaluate' and args.consumer_profile else _load(args.input))
 
     if args.command == "schema-propose":
         if not isinstance(data, dict):
@@ -208,8 +213,9 @@ def main() -> None:
             "schema_version": args.schema_version,
             "policy_version": args.policy_version,
         },
+        consumer_profile=args.consumer_profile,
     )
-    report, record = engine.evaluate(data)
+    report, record = engine.evaluate(data, run_id=args.run_id, capture_directory=args.capture_directory)
     print(json.dumps({"report": asdict(report), "audit_record": record}, indent=2))
 
 

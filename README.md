@@ -224,6 +224,11 @@ Those claims require independently designed benchmarks, real integrations, repea
 
 ## Research portfolio
 
+For the opt-in signed producer/consumer contract, see the
+[Verification Intelligence profile](docs/VERIFICATION_INTELLIGENCE_PROFILE.md).
+This preserves legacy output and adds approved run IDs, strict pre-signing version
+conversion and exact capture export; it does not authorize production releases.
+
 - [Multi-Agent Verification Copilot](projects/multi-agent-verification-copilot.md)
 - [Alignment Assurance Lab](projects/alignment-assurance-lab.md)
 - [CloudGuard AI](projects/cloudguard-ai.md)
