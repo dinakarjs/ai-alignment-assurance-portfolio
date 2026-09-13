@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -172,6 +174,30 @@ class ConsumerProfileTests(unittest.TestCase):
             self.engine(consumer_profile='unknown')
         with self.assertRaises(ValueError):
             self.engine(consumer_profile=None).evaluate(self.trace, capture_directory=self.root / 'capture')
+
+    def cli(self, extra):
+        return subprocess.run([sys.executable, '-m', 'assurance_portfolio.trace_audit_cli',
+            '--audit-log', str(self.store.path), 'evaluate', str(ROOT / 'examples/agent_trace.json'),
+            '--consumer-profile', PROFILE, '--check-version', 'agent-trace-checks/6.1.0',
+            '--minimum-check-version', 'agent-trace-checks/6.1.0', '--check-manifest-file', str(self.manifest),
+            '--schema-file', str(self.schema), '--policy-file', str(self.policy),
+            '--signing-key', str(self.private), '--signer-id', 'test-producer', '--git-commit', 'a' * 40,
+            *extra], capture_output=True, text=True, timeout=30)
+
+    def test_cli_exports_signed_run_bound_capture(self):
+        capture = self.root / 'cli-capture'
+        result = self.cli(['--run-id', 'operator-cli-run', '--capture-directory', str(capture)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        attestation = json.loads((capture / 'attestation.json').read_bytes())
+        self.assertEqual(attestation['run_id'], 'operator-cli-run')
+        self.assertEqual(attestation['check_version'], '6.1.0')
+        self.assertTrue(verify_result_attestation(attestation, self.public).valid_signature)
+        self.assertTrue(json.loads((capture / 'capture.json').read_bytes())['complete'])
+
+    def test_cli_missing_run_id_fails_without_audit(self):
+        result = self.cli([])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.store.path.exists())
 
 
 if __name__ == '__main__':

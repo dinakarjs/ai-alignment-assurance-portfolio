@@ -77,10 +77,13 @@ it is not automatically safe to publish.
 
 ## Verification and deployment limits
 
-Sixteen focused producer tests cover run binding, signed versions, malformed
+Eighteen focused producer tests cover run binding, signed versions, malformed
 identities, rollback, artifact completeness, exact snapshot hashes, source changes,
-duplicate runs, capture failure and legacy compatibility. The separate
-`Verification Intelligence producer contract` workflow checks out consumer commit
+duplicate runs, capture failure, actual CLI export and legacy compatibility.
+Public CI runs these producer-only tests. Verification Intelligence is private;
+this public repository must not receive its source or a token to fetch it.
+The separate operator-run `tests/integration/test_vi_consumer.py` suite uses an
+authorized local checkout at consumer commit
 `ddfa7893b6b2edca97807ba00f24ebef3ddf644a` and runs six independent integration
 tests using an approved **operator-host-only** task that actually invokes the
 producer CLI. It then exercises post-capture reviewer approval, successful
@@ -88,7 +91,16 @@ consumption, replay alarms, artifact substitution, signature/run tampering,
 revocation and expiry. Test producer and reviewer identities are separate,
 disposable keys, not production credentials or actual human review.
 
-The workflow retains test-only captures and results for 30 days. Passing these
+Set `VI_CONSUMER_ROOT` to that authorized checkout and optionally set
+`VI_CONTRACT_EVIDENCE` to a new operator-owned evidence directory before running
+`python -m unittest discover -s tests/integration -v` in an environment with both
+packages' dependencies. Evidence stays local; do not publish private consumer code
+or production captures. The attempted public cross-repository CI checkout failed
+because its token cannot access the private consumer; it was removed rather than
+granting broader access. A cloud integration job belongs in the private consumer
+repository after review and pinning of this producer change.
+
+Passing these
 tests establishes bounded protocol interoperability on a public example, not
 production qualification, actual agent trace completeness, all-control coverage,
 OS sandboxing of the signing service, or automatic release authorization.
