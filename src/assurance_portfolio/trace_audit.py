@@ -5,18 +5,23 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 from typing import Iterable, Mapping
 from uuid import uuid4
 
 from .assurance_selftest import deterministic_replay
 from .causal_trace import validate_causal_trace
+from .consumer_profile import (PROFILE, canonical_bytes, export_capture, file_snapshot,
+                               numeric_check_version, strict_json, validate_run_id, validate_snapshots)
 from .result_integrity import (
     IntegrityStatus,
     build_result_attestation,
+    capture_environment,
     digest_or_identifier,
     merkle_root_hex,
     sha256_file,
+    sha256_bytes,
     sha256_object,
 )
 from .schema_registry import InstanceValidation, SchemaRegistry
@@ -145,7 +150,11 @@ class AuditedTraceAssuranceEngine:
         signer_id: str | None = None,
         git_commit_sha: str | None = None,
         configuration: Mapping[str, object] | None = None,
+        consumer_profile: str | None = None,
     ) -> None:
+        if consumer_profile not in (None, PROFILE):
+            raise ValueError('Unknown consumer profile')
+        self.consumer_profile = consumer_profile
         self.audit_store = audit_store
         self.engine = TraceAssuranceEngine()
         self.check_version = check_version
@@ -232,14 +241,67 @@ class AuditedTraceAssuranceEngine:
             return InstanceValidation(False, ("schema artifact is not a JSON object",))
         return SchemaRegistry.validate_instances(document, trace)
 
-    def evaluate(self, events: Iterable[Mapping[str, object]]) -> tuple[AssuranceReport, dict[str, object]]:
+    def evaluate(self, events: Iterable[Mapping[str, object]], *, run_id: str | None = None,
+                 capture_directory: str | Path | None = None) -> tuple[AssuranceReport, dict[str, object]]:
+        strict = self.consumer_profile == PROFILE
+        if not strict and capture_directory is not None:
+            raise ValueError('Capture export requires an explicit consumer profile')
+        if run_id is not None or strict:
+            run_id = validate_run_id(run_id)
+        else:
+            run_id = f"trace-run-{uuid4()}"
+        snapshots = None
+        configuration = self.configuration
+        environment = None
+        check_version, minimum = self.check_version, self.minimum_check_version
+        if strict:
+            check_version = numeric_check_version(self.check_version)
+            minimum = numeric_check_version(self.minimum_check_version)
+            if tuple(map(int, check_version.split('.'))) < tuple(map(int, minimum.split('.'))):
+                raise ValueError('Checker version is below approved minimum')
+            if not isinstance(self.git_commit_sha, str) or not re.fullmatch(r'[0-9a-f]{40}', self.git_commit_sha):
+                raise ValueError('Consumer profile requires a full source commit')
+            if (self.signing_key_path is None or not isinstance(self.signer_id, str)
+                    or not 0 < len(self.signer_id) <= 256):
+                raise ValueError('Consumer profile requires an enrolled signing identity')
+            if type(self.engine) is not TraceAssuranceEngine or self.checker_source_path.resolve() != Path(__file__).with_name('trace_assurance.py').resolve():
+                raise ValueError('Consumer profile only supports the concrete base checker')
+            if any(item.get('record_type') == 'evaluation' and item.get('payload', {}).get('run_id') == run_id
+                   for item in self.audit_store.records()):
+                raise ValueError('Run ID already evaluated in this audit store')
+            snapshots = {name: file_snapshot(path) for name, path in {
+                'checker_file': self.checker_source_path, 'check_manifest_file': self.check_manifest_path,
+                'schema_file': self.schema_path, 'policy_file': self.policy_path}.items()}
+            manifest = strict_json(snapshots['check_manifest_file'])
+            if not isinstance(manifest, dict) or numeric_check_version(manifest.get('check_version')) != check_version:
+                raise ValueError('Concrete manifest version mismatch')
+            checks = manifest.get('required_checks')
+            if (not isinstance(checks, list) or not checks or not all(isinstance(x, str) and x for x in checks)
+                    or len(set(checks)) != len(checks) or not set(checks).issubset(self.engine.PROPERTIES)):
+                raise ValueError('Required checks are empty, duplicate or unsupported')
+            required_checks = tuple(checks)
+            reserved = {'consumer_profile', 'configured_check_version', 'configured_minimum_check_version'}
+            if reserved.intersection(self.configuration):
+                raise ValueError('Reserved consumer configuration fields')
+            configuration = strict_json(canonical_bytes(self.configuration)) | {
+                'consumer_profile': PROFILE, 'configured_check_version': self.check_version,
+                'configured_minimum_check_version': self.minimum_check_version}
+            environment = capture_environment()
         trace = [dict(item) for item in events]
+        if strict:
+            # Evaluate the exact immutable JSON snapshot that will be attested.
+            snapshots.update(trace_json=canonical_bytes(trace), config_json=canonical_bytes(configuration),
+                             environment_json=canonical_bytes(environment))
+            validate_snapshots(snapshots)
+            trace = strict_json(snapshots['trace_json'])
         report = self.engine.evaluate(trace)
         replay = deterministic_replay(trace)
         causal_validation = validate_causal_trace(trace)
-        schema_validation = self._schema_validation(trace)
+        schema_validation = (SchemaRegistry.validate_instances(strict_json(snapshots['schema_file']), trace)
+                             if strict else self._schema_validation(trace))
         system_result = report.status.value if causal_validation.valid and schema_validation.valid else "FAIL"
-        run_id = f"trace-run-{uuid4()}"
+        if strict and not replay.consistent:
+            system_result = 'FAIL'
         raw_result: dict[str, object] = {
             "base_monitor_result": report.status.value,
             "system_result": system_result,
@@ -250,26 +312,38 @@ class AuditedTraceAssuranceEngine:
             "causal_trace_validation": asdict(causal_validation),
             "schema_validation": asdict(schema_validation),
         }
-        required_checks = self._required_checks()
+        if strict:
+            snapshots['raw_result_json'] = canonical_bytes(raw_result)
+            validate_snapshots(snapshots)
+        else:
+            required_checks = self._required_checks()
+        checker_digest = sha256_bytes(snapshots['checker_file']) if strict else self.checker_digest
+        manifest_digest = sha256_bytes(snapshots['check_manifest_file']) if strict else self.check_manifest_digest
+        schema_digest = sha256_bytes(snapshots['schema_file']) if strict else self.schema_digest
+        policy_digest = sha256_bytes(snapshots['policy_file']) if strict else self.policy_digest
+        capture = Path(capture_directory) if capture_directory is not None else None
+        if capture is not None:
+            capture.mkdir(parents=True, mode=0o700, exist_ok=False)
         executed_checks = tuple(self.engine.PROPERTIES)
         attestation = build_result_attestation(
             run_id=run_id,
             machine_verdict=system_result,
             trace=trace,
             raw_result=raw_result,
-            checker_digest=self.checker_digest,
-            check_manifest_digest=self.check_manifest_digest,
-            schema_digest=self.schema_digest,
-            policy_digest=self.policy_digest,
-            config=self.configuration,
+            checker_digest=checker_digest,
+            check_manifest_digest=manifest_digest,
+            schema_digest=schema_digest,
+            policy_digest=policy_digest,
+            config=configuration,
             git_commit_sha=self.git_commit_sha,
-            check_version=self.check_version,
-            minimum_check_version=self.minimum_check_version,
+            check_version=check_version,
+            minimum_check_version=minimum,
             required_checks=required_checks,
             executed_checks=executed_checks,
-            artifact_binding_complete=self.artifact_binding_complete,
+            artifact_binding_complete=True if strict else self.artifact_binding_complete,
             signing_key_path=self.signing_key_path,
             signer_id=self.signer_id,
+            environment_snapshot=environment,
         )
         if not replay.consistent or not causal_validation.valid or not schema_validation.valid:
             attestation = type(attestation)(
@@ -281,14 +355,17 @@ class AuditedTraceAssuranceEngine:
             "event_count": len(trace),
             "check_version": self.check_version,
             "minimum_check_version": self.minimum_check_version,
-            "check_set_fingerprint": self.check_set_fingerprint,
-            "checker_digest": self.checker_digest,
-            "check_manifest_digest": self.check_manifest_digest,
+            "check_set_fingerprint": (_sha256({'profile': PROFILE, 'required_checks': required_checks,
+                'checker_digest': checker_digest, 'check_manifest_digest': manifest_digest,
+                'schema_digest': schema_digest, 'policy_digest': policy_digest, 'configuration': configuration})
+                if strict else self.check_set_fingerprint),
+            "checker_digest": checker_digest,
+            "check_manifest_digest": manifest_digest,
             "event_schema_version": self.event_schema_version,
-            "schema_digest": self.schema_digest,
+            "schema_digest": schema_digest,
             "policy_version": self.policy_version,
-            "policy_digest": self.policy_digest,
-            "configuration_digest": _sha256(self.configuration),
+            "policy_digest": policy_digest,
+            "configuration_digest": _sha256(configuration),
             "git_commit_sha": self.git_commit_sha,
             "base_monitor_result": report.status.value,
             "system_result": system_result,
@@ -302,6 +379,8 @@ class AuditedTraceAssuranceEngine:
             "attestation": asdict(attestation),
         }
         audit_record = self.audit_store.append("evaluation", payload)
+        if capture is not None:
+            export_capture(capture, snapshots, asdict(attestation))
         return report, audit_record
 
 
